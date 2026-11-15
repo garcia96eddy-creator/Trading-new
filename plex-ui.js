@@ -1,8 +1,8 @@
-// PLEX v5.5 - Módulo 4: Interfaz Gráfica, Panel Flotante y Gráficas
+// PLEX v5.6 - Módulo 4: Interfaz Gráfica, Panel Flotante y Gráficas
 window.PLEX_MOD = window.PLEX_MOD || {};
 
 (() => {
-  const { CFG, PAT_DIR, PATN, SRCN, TRN2, POSN2, loadCal, saveCal, dirWord, hhmmss, jExport, unlockAudio, playSound } = window.PLEX_MOD.config;
+  const { CFG, PAT_DIR, PATN, PATD, SRCN, TRN2, POSN2, loadCal, saveCal, dirWord, hhmmss, jExport, unlockAudio, playSound } = window.PLEX_MOD.config;
   const vision = window.PLEX_MOD.vision;
   const brain = window.PLEX_MOD.brain;
 
@@ -11,6 +11,19 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   const GREEN = "#3ddc84", RED = "#ff5c5c", AMBER = "#ffc857", BLUE = "#5cc8ff";
   const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // Iconos compactos por patrón (el color indica la dirección: verde sube, rojo baja, gris neutro)
+  const PGLYPH = {
+    NONE: "–", BRK_UP: "⇑", BRK_DN: "⇓", DBOT: "W", DTOP: "M",
+    PULL_U: "↗", PULL_D: "↘", REJ_B: "⊥", REJ_T: "⊤",
+    INS_UP: "▣", INS_DN: "▣", RET_UP: "↻", RET_DN: "↻",
+    HAMMER: "🔨", SHOOT: "🌠", ENG_UP: "🟩", ENG_DN: "🟥",
+    HARAMI_U: "◩", HARAMI_D: "◩", MORN: "🌅", EVEN: "🌇",
+    SOLD3: "3▲", CROW3: "3▼", MARU_U: "█", MARU_D: "█", DOJI: "✚"
+  };
+  const SRC_ICON = { TRI: "🔺", CRUCE: "🔀", PAT: "🧩", USR: "👤" };
+  const pGlyph = k => PGLYPH[k] || "•";
+  const pCol = k => (PAT_DIR[k] === "HIGHER" ? GREEN : PAT_DIR[k] === "LOWER" ? RED : "#9ab");
 
   const el = (tag, css, parent, txt) => {
     const e = document.createElement(tag);
@@ -73,11 +86,25 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   sec(panes[1], "📰 Qué ha pasado");
   const feed = el("div", "line-height:1.4", panes[1]);
 
-  // Pestaña 3: Aprende (diseño compacto)
-  sec(panes[2], "🧠 Aprende");
-  const seenBox = el("div", "display:flex;flex-wrap:wrap;gap:3px;margin-bottom:7px", panes[2]);
+  // Pestaña 3: Aprende (compacta: iconos + filas de una línea)
+  const seenTitle = sec(panes[2], "🧩 Patrones vistos");
+  const seenBox = el("div", "display:grid;grid-template-columns:repeat(6,1fr);gap:3px", panes[2]);
+  const seenInfo = el("div", "margin:4px 0 2px;padding:4px 6px;border-radius:6px;background:#141c2a;color:#8aa;font-size:10px;line-height:1.3;min-height:14px", panes[2]);
   sec(panes[2], "📊 Rendimiento");
   const tbl = el("div", "", panes[2]);
+  const legend = el("div", "color:#789;font-size:9px;margin-top:4px;line-height:1.4", panes[2],
+    "✅ Seguir · 🔄 Invertir · ⛔ Evitar · ⏳ Pocos datos · │ mínimo\n🔺 Triángulo · 🔀 Cruce · 🧩 Patrón · 👤 Tú");
+  legend.style.whiteSpace = "pre-line";
+  let seenHtml = "", seenInfoHtml = "", tblHtml = "";
+
+  seenBox.addEventListener("click", e => {
+    e.stopPropagation();
+    const c = e.target.closest("[data-k]");
+    if (!c) return;
+    ui.sel = ui.sel === c.dataset.k ? null : c.dataset.k;
+    seenHtml = ""; seenInfoHtml = "";
+    renderFn();
+  });
 
   // Pestaña 4: Ajustes
   const btns = el("div", "display:grid;grid-template-columns:1fr 1fr;gap:5px", panes[3]);
@@ -293,26 +320,49 @@ window.PLEX_MOD = window.PLEX_MOD || {};
             : `<div style="color:#789">Sin eventos todavía…</div>`;
 
         } else if (tab === 2) {
+          // --- Patrones vistos: cuadrícula de iconos con contador ---
           const sk = Object.keys(rl.seen).sort((a, c) => rl.seen[c] - rl.seen[a]);
-          seenBox.innerHTML = sk.length
-            ? sk.map(k => `<span title="${PATN[k] || k}" style="background:#141c2a;border:1px solid #29364a;border-radius:5px;padding:2px 5px;font-size:10px;white-space:nowrap">${PATN[k] || k} <b>×${rl.seen[k]}</b></span>`).join("")
-            : `<span style="color:#789;font-size:11px">👀 Sin patrones todavía</span>`;
+          seenTitle.textContent = "🧩 Patrones vistos" + (sk.length ? ` (${sk.length})` : "");
+          const sh = sk.length
+            ? sk.map(k => {
+              const on = ui.sel === k;
+              return `<div data-k="${k}" style="display:flex;align-items:center;justify-content:center;gap:3px;background:${on ? "#2a3a58" : "#141c2a"};` +
+                `border:1px solid ${on ? "#5a7aa8" : "#29364a"};border-radius:6px;padding:4px 0;white-space:nowrap">` +
+                `<span style="font-size:13px;color:${pCol(k)};line-height:1">${pGlyph(k)}</span>` +
+                `<b style="font-size:10px;color:#cfe">${rl.seen[k]}</b></div>`;
+            }).join("")
+            : `<span style="color:#789;font-size:11px;grid-column:1/-1">👀 Sin patrones todavía</span>`;
+          if (sh !== seenHtml) { seenHtml = sh; seenBox.innerHTML = sh; }
+
+          const sel = ui.sel && rl.seen[ui.sel] != null ? ui.sel : null;
+          const ih = sel
+            ? `<span style="color:${pCol(sel)};font-size:13px">${pGlyph(sel)}</span> <b style="color:#cfe">${esc(PATN[sel] || sel)}</b> ×${rl.seen[sel]}` +
+              (PAT_DIR[sel] ? ` → ${dirWord(PAT_DIR[sel])}` : "") + (PATD[sel] ? `<br>${esc(PATD[sel])}` : "")
+            : "👆 Toca un icono para ver su nombre y qué significa";
+          if (ih !== seenInfoHtml) { seenInfoHtml = ih; seenInfo.innerHTML = ih; }
+
+          // --- Rendimiento: una fila por contexto ---
           const rows = Object.keys(rl.Q).filter(k => k.split("|").length >= 2 && rl.Q[k].N > 0)
             .sort((a, c) => rl.Q[c].N - rl.Q[a].N).slice(0, 14);
-          tbl.innerHTML = rows.length ? rows.map(k => {
+          const th = rows.length ? rows.map(k => {
             const parts = k.split("|"), sc = parts[0], pt = parts[1], e = rl.Q[k], w = e.W / e.N;
-            let col, icon, label;
+            let col, icon;
             const us = sc === "USR";
-            if (e.N < (us ? CFG.usrMinN : CFG.rlMinN)) { col = "#789"; icon = "⏳"; label = "Pocos datos"; }
-            else if (w > b) { col = GREEN; icon = "✅"; label = us ? "Te funciona" : "Seguir"; }
-            else if (1 - w > b) { col = AMBER; icon = "🔄"; label = "Invertir"; }
-            else { col = RED; icon = "⛔"; label = us ? "No rinde" : "Evitar"; }
-            const sourceName = us ? "👤" : (SRCN[sc] || sc);
-            return `<div style="background:#111a27;border:1px solid #253247;border-radius:6px;padding:5px 7px;margin:4px 0">` +
-              `<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:11px"><span><b>${sourceName}</b> · ${PATN[pt] || pt}</span><span style="color:${col};white-space:nowrap">${icon} ${label}</span></div>` +
-              `<div style="display:flex;align-items:center;gap:6px;margin-top:4px"><div style="position:relative;flex:1;height:5px;background:#1b2433;border-radius:4px;overflow:visible"><div style="width:${(w * 100).toFixed(0)}%;height:100%;background:${col};border-radius:4px"></div><div style="position:absolute;left:${(b * 100).toFixed(1)}%;top:-2px;width:1px;height:9px;background:#fff"></div></div><b style="font-size:10px;color:${col};min-width:32px;text-align:right">${(w * 100).toFixed(0)}%</b><span style="font-size:10px;color:#8aa;white-space:nowrap">n=${e.N}</span></div></div>`;
-          }).join("") + `<div style="color:#789;font-size:10px;margin-top:4px">⚪ Mínimo requerido · 👤 Operaciones manuales</div>`
-            : `<div style="color:#789;font-size:11px">📚 Aún sin datos. Opera o deja correr PLEX.</div>`;
+            if (e.N < (us ? CFG.usrMinN : CFG.rlMinN)) { col = "#789"; icon = "⏳"; }
+            else if (w > b) { col = GREEN; icon = "✅"; }
+            else if (1 - w > b) { col = AMBER; icon = "🔄"; }
+            else { col = RED; icon = "⛔"; }
+            const pc = pCol(pt), nm = PATN[pt] || pt;
+            return `<div style="display:flex;align-items:center;gap:5px;background:#111a27;border:1px solid #253247;border-radius:6px;padding:4px 6px;margin:2px 0;font-size:10px">` +
+              `<span style="flex:none">${icon}</span>` +
+              `<span style="flex:none" title="${esc(SRCN[sc] || sc)}">${SRC_ICON[sc] || esc(sc)}</span>` +
+              `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="color:${pc}">${pGlyph(pt)}</span> ${esc(nm)}</span>` +
+              `<div style="position:relative;flex:none;width:36px;height:4px;background:#1b2433;border-radius:3px"><div style="width:${(w * 100).toFixed(0)}%;height:100%;background:${col};border-radius:3px"></div>` +
+              `<div style="position:absolute;left:${(b * 100).toFixed(1)}%;top:-2px;width:1px;height:8px;background:#fff"></div></div>` +
+              `<b style="flex:none;width:26px;text-align:right;color:${col}">${(w * 100).toFixed(0)}%</b>` +
+              `<span style="flex:none;width:28px;text-align:right;color:#8aa">${e.N}</span></div>`;
+          }).join("") : `<div style="color:#789;font-size:11px">📚 Aún sin datos. Opera o deja correr PLEX.</div>`;
+          if (th !== tblHtml) { tblHtml = th; tbl.innerHTML = th; }
         }
       } catch (e) {}
     };
