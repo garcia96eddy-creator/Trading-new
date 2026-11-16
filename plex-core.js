@@ -421,6 +421,16 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         ? `Cruce del zigzag (tramo ${candSign === 1 ? "▲ sube" : "▼ baja"})`
         : (PATN[pn] || pn);
 
+  function entryPlan(probability) {
+    if (probability == null || !Number.isFinite(probability) || probability < 0.54)
+      return { level: "baja", count: 1 };
+    if (probability < 0.60)
+      return { level: "normal", count: 2 };
+    if (probability < 0.70)
+      return { level: "media", count: 3 };
+    return { level: "alta", count: 5 };
+  }
+
   function signal(src, dir, force, t0, patName) {
     const isPat = src === "PAT";
     const isSeq = src === "SEQ";
@@ -556,15 +566,30 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       );
     }
 
+    const probabilityInfo = brain.probFor(src, dir, patName);
+    const executionProbability = probabilityInfo
+      ? mode === "fade" ? 1 - probabilityInfo.p : probabilityInfo.p
+      : null;
+    const plan = entryPlan(executionProbability);
+    const probabilityText = probabilityInfo
+      ? `${(executionProbability * 100).toFixed(1)}% (${probabilityInfo.n} casos)`
+      : `sin ${CFG.rlMinN} resultados válidos del contexto`;
+
     why.lines.push(
-      "Monto: se usa el valor configurado en la plataforma; no se modifica."
+      `Acierto histórico estimado para esta dirección: ${probabilityText}; `+
+      `nivel ${plan.level}, se enviarán ${plan.count} entrada`+
+      `${plan.count === 1 ? "" : "s"} simultánea${plan.count === 1 ? "" : "s"}.`
+    );
+    why.lines.push(
+      "Cada entrada usa el monto configurado en la plataforma; no se modifica. La estimación no garantiza el resultado."
     );
 
+    const tradeSrc = isPat ? "PAT:" + patName : src;
     const tr = doTrade(
       fd,
       force,
       t0,
-      isPat ? "PAT:" + patName : src,
+      tradeSrc,
       why
     );
 
@@ -573,6 +598,24 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         smp.ex = fd;
         smp.tr = tr;
         smp.why = why;
+      }
+
+      let opened = 1;
+      while (opened < plan.count) {
+        if (!doTrade(fd, true, t0, tradeSrc, why)) break;
+        opened++;
+      }
+
+      if (plan.count > 1) {
+        lastEvent = opened === plan.count
+          ? `Se enviaron ${opened} entradas simultáneas ${dirWord(fd)}`
+          : `Se enviaron ${opened} de ${plan.count} entradas previstas`;
+        say(
+          opened === plan.count ? "🟢" : "⚠️",
+          `${lastEvent}; confirma en la plataforma que todas fueron aceptadas.`,
+          "batch" + tr.t
+        );
+        paint();
       }
 
       return fd;
