@@ -1,5 +1,5 @@
 
-// PLEX v6.0 - Módulo 1: Configuración, Constantes, Almacenamiento y Audio
+// PLEX v6.1 - Módulo 1: Configuración, Constantes, Almacenamiento y Audio
 window.PLEX_MOD = window.PLEX_MOD || {};
 
 (() => {
@@ -11,7 +11,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     everyCross: true,
     gapMs: 250,
     width: 400,
-    xMin: 0.03, xMax: 0.90,
+    xMin: 0.03,
+    xMax: 0.90,
     scanFrom: 0.40,
     minArea: 42,
     sound: true,
@@ -26,7 +27,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     // Pausa al tocar la pantalla
     touchPauseMs: 2000,
 
-    // Estrategias originales: se conservan
+    // Estrategias originales
     useTriangles: true,
     useCross: true,
     usePatterns: true,
@@ -39,17 +40,17 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     strategyLiquiditySweep: true,
     strategyRange: true,
 
-    // Análisis principal de 1 minuto
+    // Análisis de velas de un minuto
     analysisTimeframeMs: 60000,
     barMs: 60000,
     maxBars: 120,
     swingK: 2,
     patCooldownMs: 8000,
 
-    // Entrada de 30 segundos
+    // Objetivo de entrada de 30 segundos
     entryTimeframeMs: 30000,
 
-    // Filtros del motor adaptativo
+    // Filtros adaptativos
     strategyMinSamples: 30,
     strategyMinWinRate: 0.56,
     strategyMinEdge: 0.02,
@@ -65,7 +66,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     minTailPx: 3,
     tol: 70,
 
-    // Aprendizaje por refuerzo original
+    // Aprendizaje por refuerzo
     rl: true,
     rlMode: "gate",
     rlWarmup: 60,
@@ -78,13 +79,13 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     payout: 0.87,
     priceStaleMs: 4000,
 
-    // Gestión de monto: modo prudente
+    // Gestión prudente de monto
     stakeBasePct: 0.01,
     stakeMaxPct: 0.01,
     stakeMinSamples: 30,
     stakeMinWinRate: 0.56,
 
-    // Zonas de click originales
+    // Zonas de click
     zoneVary: true,
     zoneEps: 0.25,
 
@@ -98,18 +99,54 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   };
 
   const PAT_DIR = {
-    BRK_UP: "HIGHER", BRK_DN: "LOWER",
-    DBOT: "HIGHER", DTOP: "LOWER",
-    PULL_U: "HIGHER", PULL_D: "LOWER",
-    REJ_B: "HIGHER", REJ_T: "LOWER",
-    INS_UP: "HIGHER", INS_DN: "LOWER",
-    RET_UP: "HIGHER", RET_DN: "LOWER",
-    HAMMER: "HIGHER", SHOOT: "LOWER",
-    ENG_UP: "HIGHER", ENG_DN: "LOWER",
-    HARAMI_U: "HIGHER", HARAMI_D: "LOWER",
-    MORN: "HIGHER", EVEN: "LOWER",
-    SOLD3: "HIGHER", CROW3: "LOWER",
-    MARU_U: "HIGHER", MARU_D: "LOWER"
+    BRK_UP: "HIGHER",
+    BRK_DN: "LOWER",
+    DBOT: "HIGHER",
+    DTOP: "LOWER",
+    PULL_U: "HIGHER",
+    PULL_D: "LOWER",
+    REJ_B: "HIGHER",
+    REJ_T: "LOWER",
+    INS_UP: "HIGHER",
+    INS_DN: "LOWER",
+    RET_UP: "HIGHER",
+    RET_DN: "LOWER",
+    HAMMER: "HIGHER",
+    SHOOT: "LOWER",
+    ENG_UP: "HIGHER",
+    ENG_DN: "LOWER",
+    HARAMI_U: "HIGHER",
+    HARAMI_D: "LOWER",
+    MORN: "HIGHER",
+    EVEN: "LOWER",
+    SOLD3: "HIGHER",
+    CROW3: "LOWER",
+    MARU_U: "HIGHER",
+    MARU_D: "LOWER",
+
+    // Estructura de mercado
+    LVL_B: "HIGHER",
+    LVL_T: "LOWER",
+    TWZ_U: "HIGHER",
+    TWZ_D: "LOWER",
+    ST_BOS_U: "HIGHER",
+    ST_BOS_D: "LOWER",
+    ST_CHOCH_U: "HIGHER",
+    ST_CHOCH_D: "LOWER",
+    ST_SWEEP_H: "LOWER",
+    ST_SWEEP_L: "HIGHER",
+    ST_RET_U: "HIGHER",
+    ST_RET_D: "LOWER",
+
+    // Estrategias adaptativas
+    ST_TREND_U: "HIGHER",
+    ST_TREND_D: "LOWER",
+    ST_BREAK_U: "HIGHER",
+    ST_BREAK_D: "LOWER",
+    ST_REJECT_U: "HIGHER",
+    ST_REJECT_D: "LOWER",
+    ST_RANGE_U: "HIGHER",
+    ST_RANGE_D: "LOWER"
   };
 
   const PATN = {
@@ -122,8 +159,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     PULL_D: "Retroceso bajista",
     REJ_B: "Rechazo abajo",
     REJ_T: "Rechazo arriba",
-    INS_UP: "Vela interior ↑",
-    INS_DN: "Vela interior ↓",
+    INS_UP: "Vela interior alcista",
+    INS_DN: "Vela interior bajista",
     RET_UP: "Retest alcista",
     RET_DN: "Retest bajista",
     HAMMER: "Martillo",
@@ -138,42 +175,83 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     CROW3: "Tres cuervos",
     MARU_U: "Marubozu verde",
     MARU_D: "Marubozu rojo",
-    DOJI: "Doji"
+    DOJI: "Doji",
+
+    LVL_B: "Máximo ascendente",
+    LVL_T: "Mínimo descendente",
+    TWZ_U: "Suelo con rechazo",
+    TWZ_D: "Techo con rechazo",
+    ST_BOS_U: "Ruptura de estructura alcista",
+    ST_BOS_D: "Ruptura de estructura bajista",
+    ST_CHOCH_U: "Cambio de carácter alcista",
+    ST_CHOCH_D: "Cambio de carácter bajista",
+    ST_SWEEP_H: "Barrido de liquidez superior",
+    ST_SWEEP_L: "Barrido de liquidez inferior",
+    ST_RET_U: "Retesteo alcista",
+    ST_RET_D: "Retesteo bajista",
+
+    ST_TREND_U: "Continuación de tendencia alcista",
+    ST_TREND_D: "Continuación de tendencia bajista",
+    ST_BREAK_U: "Ruptura y retesteo alcista",
+    ST_BREAK_D: "Ruptura y retesteo bajista",
+    ST_REJECT_U: "Rechazo de soporte",
+    ST_REJECT_D: "Rechazo de resistencia",
+    ST_RANGE_U: "Rebote alcista en rango",
+    ST_RANGE_D: "Rebote bajista en rango"
   };
 
   const PATD = {
-    BRK_UP: "el precio rompió el último máximo: mandan los compradores",
-    BRK_DN: "el precio rompió el último mínimo: mandan los vendedores",
-    DBOT: "doble suelo: rebotó dos veces en el mismo mínimo",
-    DTOP: "doble techo: chocó dos veces con el mismo máximo",
-    PULL_U: "en tendencia alcista retrocedió y ya vuelve a subir",
-    PULL_D: "en tendencia bajista rebotó y ya vuelve a bajar",
-    REJ_B: "mecha larga abajo en zona baja: rechazo de precios bajos",
-    REJ_T: "mecha larga arriba en zona alta: rechazo de precios altos",
-    INS_UP: "la vela interior se rompió hacia arriba",
-    INS_DN: "la vela interior se rompió hacia abajo",
-    RET_UP: "tras romper un máximo volvió a probarlo y rebota",
-    RET_DN: "tras romper un mínimo volvió a probarlo y cae",
-    HAMMER: "mecha inferior larga tras caída",
-    SHOOT: "mecha superior larga tras subida",
-    ENG_UP: "una vela verde cubre por completo a la roja anterior",
-    ENG_DN: "una vela roja cubre por completo a la verde anterior",
-    HARAMI_U: "vela verde pequeña dentro de una roja grande",
-    HARAMI_D: "vela roja pequeña dentro de una verde grande",
-    MORN: "caída, duda y vela verde fuerte",
-    EVEN: "subida, duda y vela roja fuerte",
-    SOLD3: "tres velas verdes seguidas cerrando más alto",
-    CROW3: "tres velas rojas seguidas cerrando más bajo",
-    MARU_U: "vela verde fuerte sin mechas",
-    MARU_D: "vela roja fuerte sin mechas",
-    DOJI: "indecisión"
+    BRK_UP: "El precio rompió el último máximo.",
+    BRK_DN: "El precio rompió el último mínimo.",
+    DBOT: "Doble suelo: dos rechazos en una zona de mínimos.",
+    DTOP: "Doble techo: dos rechazos en una zona de máximos.",
+    PULL_U: "Retroceso dentro de una tendencia alcista.",
+    PULL_D: "Retroceso dentro de una tendencia bajista.",
+    REJ_B: "Mecha inferior: rechazo de precios bajos.",
+    REJ_T: "Mecha superior: rechazo de precios altos.",
+    INS_UP: "Vela interior rota al alza.",
+    INS_DN: "Vela interior rota a la baja.",
+    RET_UP: "El precio volvió a probar una ruptura alcista.",
+    RET_DN: "El precio volvió a probar una ruptura bajista.",
+    HAMMER: "Martillo con mecha inferior larga.",
+    SHOOT: "Estrella fugaz con mecha superior larga.",
+    ENG_UP: "Envolvente alcista.",
+    ENG_DN: "Envolvente bajista.",
+    HARAMI_U: "Harami alcista.",
+    HARAMI_D: "Harami bajista.",
+    MORN: "Estrella de la mañana.",
+    EVEN: "Estrella de la tarde.",
+    SOLD3: "Tres soldados alcistas.",
+    CROW3: "Tres cuervos bajistas.",
+    MARU_U: "Marubozu verde.",
+    MARU_D: "Marubozu rojo.",
+    DOJI: "Vela de indecisión.",
+
+    ST_BOS_U: "Ruptura de estructura al alza.",
+    ST_BOS_D: "Ruptura de estructura a la baja.",
+    ST_CHOCH_U: "Posible cambio de carácter alcista.",
+    ST_CHOCH_D: "Posible cambio de carácter bajista.",
+    ST_SWEEP_H: "El precio superó un máximo y retrocedió.",
+    ST_SWEEP_L: "El precio perforó un mínimo y recuperó.",
+    ST_RET_U: "Retesteo de nivel roto al alza.",
+    ST_RET_D: "Retesteo de nivel roto a la baja.",
+
+    ST_TREND_U: "Continuación de estructura HH/HL.",
+    ST_TREND_D: "Continuación de estructura LH/LL.",
+    ST_BREAK_U: "Ruptura alcista seguida de retesteo.",
+    ST_BREAK_D: "Ruptura bajista seguida de retesteo.",
+    ST_REJECT_U: "Rechazo de una zona de soporte.",
+    ST_REJECT_D: "Rechazo de una zona de resistencia.",
+    ST_RANGE_U: "Rebote desde la parte baja de un rango.",
+    ST_RANGE_D: "Rebote desde la parte alta de un rango."
   };
 
   const SRCN = {
     TRI: "Triángulo",
     CRUCE: "Cruce",
     PAT: "Patrón",
-    USR: "Tú"
+    USR: "Tú",
+    STRATEGY: "Estrategia adaptativa"
   };
 
   const TRN2 = {
@@ -188,7 +266,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     T: "alta"
   };
 
-  // Almacenamiento
+  // Almacenamiento de calibración
   const loadCal = k => {
     try {
       return JSON.parse(localStorage.getItem(k));
@@ -361,6 +439,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   function chime(freq, start, amp) {
     const c = getCtx();
+    if (!c) return;
+
     const out = getBus(c);
     const t = c.currentTime + start;
 
