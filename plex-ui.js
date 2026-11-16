@@ -1,3 +1,4 @@
+
 // PLEX v6.1 - Módulo 4: Interfaz gráfica y control de estrategias
 window.PLEX_MOD = window.PLEX_MOD || {};
 
@@ -15,6 +16,21 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     { open:false, x:4, y:108 },
     loadCal("iqtri_ui") || {}
   );
+
+  // Restaurar los toggles de estrategias guardados por la interfaz.
+  // Solo se aplican claves booleanas reconocidas; si no hay datos,
+  // se conservan los valores definidos en CFG.
+  const savedStrategies = loadCal("iqtri_strategy_settings") || {};
+  [
+    "strategyTrend",
+    "strategyBreakRetest",
+    "strategyRejection",
+    "strategyLiquiditySweep",
+    "strategyRange"
+  ].forEach(key => {
+    if (typeof savedStrategies[key] === "boolean")
+      CFG[key] = savedStrategies[key];
+  });
 
   if (ui.sound === false) CFG.sound = false;
 
@@ -354,7 +370,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       paintToggle(bt,label,CFG[key]!==false);
     });
 
-    const allBtn=mk("✅ Activar las cinco",()=>{
+    mk("✅ Activar las cinco",()=>{
       strategyButtons.forEach(([key])=>CFG[key]=true);
       saveCal("iqtri_strategy_settings",{
         strategyTrend:true,
@@ -367,7 +383,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       renderFn();
     });
 
-    const offBtn=mk("⛔ Desactivar las cinco",()=>{
+    mk("⛔ Desactivar las cinco",()=>{
       strategyButtons.forEach(([key])=>CFG[key]=false);
       saveCal("iqtri_strategy_settings",{
         strategyTrend:false,
