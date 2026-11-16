@@ -78,6 +78,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   document.addEventListener("pointerup", e => {
     if (!vision.getCalMode() || ui.box.contains(e.target)) return;
     lastEvent = vision.sampleAt(e.clientX, e.clientY);
+    ui.setSettingsStatus(lastEvent);
   }, true);
 
   let demoAt = 0, demoVal = false;
@@ -559,6 +560,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     sess.signals++;
 
     const label = srcLabel(src, dir, patName);
+    lastEvent = `Señal detectada: ${label} → ${dirWord(dir)}`;
 
     say(
       isPat ? "🧩" : src === "TRI" ? "🔺" : "🔀",
@@ -580,6 +582,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     const smp = ready && !isPaused()
       ? brain.recordSample(curPrice(), expiryBase(), src, dir, keys, patName, false)
       : null;
+
+    if (isPat && !(ready && CFG.rlMode === "gate")) {
+      lastEvent = `${label}: patrón en modo de aprendizaje`;
+      return null;
+    }
 
     if (ready && CFG.rlMode === "gate" &&
       (isPat || rl.total >= CFG.rlWarmup)) {
@@ -613,6 +620,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
       if (isPat) {
         if (d.a !== "FOLLOW" && d.a !== "FADE") {
+          lastEvent = `${label}: falta evidencia de aprendizaje`;
           say("📚", `${label}: aún sin evidencia suficiente, solo aprende`, "learn" + label);
           return null;
         }
@@ -843,6 +851,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     doTrade,
     setLastEvent: txt => {
       lastEvent = txt;
+      ui.setSettingsStatus(txt);
     }
   });
 

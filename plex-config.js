@@ -250,7 +250,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     new Date(t).toLocaleTimeString([], { hour12: false });
 
   // Diario IndexedDB
-  let jdb = null;
+  let jdb = null, jdbFailed = false;
+  const journalPending = [];
 
   try {
     const rq = indexedDB.open("IQTriDB", 1);
@@ -264,28 +265,52 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     rq.onsuccess = e => {
       jdb = e.target.result;
+      journalPending.splice(0).forEach(jAdd);
+    };
+
+    rq.onerror = () => {
+      jdbFailed = true;
+      journalPending.length = 0;
     };
   } catch (e) {}
 
   const jAdd = o => {
+    if (!jdb) {
+      if (!jdbFailed) journalPending.push(o);
+      return;
+    }
+
     try {
-      if (jdb) {
-        jdb.transaction("journal", "readwrite")
-          .objectStore("journal")
-          .add(o);
-      }
+      jdb.transaction("journal", "readwrite")
+        .objectStore("journal")
+        .add(o);
     } catch (e) {}
   };
 
   function jExport(onStatus) {
     if (!jdb) {
-      if (onStatus) onStatus("diario no disponible");
+      if (onStatus) onStatus(
+        jdbFailed
+          ? "diario no disponible en este navegador"
+          : "diario cargando; intenta de nuevo"
+      );
       return;
     }
 
-    const rq = jdb.transaction("journal")
-      .objectStore("journal")
-      .getAll();
+    let rq;
+
+    try {
+      rq = jdb.transaction("journal")
+        .objectStore("journal")
+        .getAll();
+    } catch (e) {
+      if (onStatus) onStatus("diario: no se pudo leer");
+      return;
+    }
+
+    rq.onerror = () => {
+      if (onStatus) onStatus("diario: no se pudo leer");
+    };
 
     rq.onsuccess = () => {
       const rows = rq.result || [];
@@ -302,14 +327,18 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         ))
         .join("\n");
 
+      const a = document.createElement("a");
+
       try {
-        const a = document.createElement("a");
         a.href = URL.createObjectURL(
           new Blob([csv], { type: "text/csv" })
         );
         a.download = "iqtri_journal.csv";
         a.click();
-      } catch (e) {}
+      } catch (e) {
+        if (onStatus) onStatus("diario: no se pudo descargar");
+        return;
+      }
 
       if (onStatus)
         onStatus("diario: " + rows.length + " filas");
