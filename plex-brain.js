@@ -1,8 +1,20 @@
-// PLEX v5.5 - Módulo 3: Estructura de Mercado, Patrones y Aprendizaje por Refuerzo (RL)
+// PLEX v5.7 - Módulo 3: Estructura de Mercado, Acción del Precio, Patrones y Aprendizaje por Refuerzo (RL)
+// Novedades v5.7: niveles de soporte/resistencia con toques, momentum (EMA9), puntaje de confluencia (bias),
+// patrones nuevos (rebote en nivel, pinzas) y el RL ahora aprende también según la confluencia (C+ / C0 / C-).
 window.PLEX_MOD = window.PLEX_MOD || {};
 
 (() => {
-  const { CFG, PAT_DIR, PATN, SRCN, loadCal, saveCal, dirWord, jAdd } = window.PLEX_MOD.config;
+  const { CFG, PAT_DIR, PATN, PATD, SRCN, loadCal, saveCal, dirWord, jAdd } = window.PLEX_MOD.config;
+
+  // Patrones nuevos (se agregan a las tablas de config sin tocar ese archivo)
+  Object.assign(PAT_DIR, { LVL_B: "HIGHER", LVL_T: "LOWER", TWZ_U: "HIGHER", TWZ_D: "LOWER" });
+  Object.assign(PATN, { LVL_B: "Rebote en soporte", LVL_T: "Rebote en resistencia", TWZ_U: "Pinzas de suelo", TWZ_D: "Pinzas de techo" });
+  Object.assign(PATD, {
+    LVL_B: "el precio tocó un soporte probado varias veces y ya rebota hacia arriba",
+    LVL_T: "el precio tocó una resistencia probada varias veces y ya cae",
+    TWZ_U: "dos velas con el mismo mínimo: el suelo se defiende y gira al alza",
+    TWZ_D: "dos velas con el mismo máximo: el techo se defiende y gira a la baja"
+  });
 
   const RL_KEY = "iqtri_rl4";
   let rl = Object.assign({ Q: {}, total: 0, hist: [], pl: 0 }, loadCal(RL_KEY) || {});
@@ -12,10 +24,10 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   const pending = [];
   let bars = [], curBar = null;
-  let S = { trend: "R", pos: "M", pat: "NONE", atr: 0, swH: [], swL: [] };
+  let S = { trend: "R", pos: "M", pat: "NONE", atr: 0, swH: [], swL: [], bias: 0, lvl: "N", lvlT: 0, mom: 0 };
   const patState = {}, patLast = {};
-  const STRUCT = ["BRK_UP", "BRK_DN", "DBOT", "DTOP", "PULL_U", "PULL_D", "REJ_B", "REJ_T", "INS_UP", "INS_DN", "RET_UP", "RET_DN"];
-  let cdlBarT = 0, cdlNow = { t: 0, names: [], color: "" }, prevTrend = null, lastSwHp = 0, lastSwLp = 0, brk = null;
+  const STRUCT = ["BRK_UP", "BRK_DN", "DBOT", "DTOP", "PULL_U", "PULL_D", "REJ_B", "REJ_T", "INS_UP", "INS_DN", "RET_UP", "RET_DN", "LVL_B", "LVL_T"];
+  let cdlBarT = 0, cdlNow = { t: 0, names: [], color: "" }, prevTrend = null, lastSwHp = 0, lastSwLp = 0, brk = null, lastBB = 0;
 
   const seenInc = nm => { rl.seen[nm] = (rl.seen[nm] || 0) + 1; rlDirty = true; };
 
@@ -37,6 +49,36 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     pending.length = 0;
   }
 
+  const ema = (arr, n) => {
+    const k = 2 / (n + 1);
+    let e = arr[0];
+    for (let i = 1; i < arr.length; i++) e = arr[i] * k + e * (1 - k);
+    return e;
+  };
+
+  // Nivel de soporte/resistencia probado (>= 2 toques) más cercano al precio
+  function levelNear(swH, swL, p, atr) {
+    const tol = 0.35 * atr, all = swH.concat(swL);
+    let best = null;
+    for (const s of all) {
+      let touches = 0, sum = 0, nH = 0, nL = 0;
+      for (const q of all) {
+        if (Math.abs(q.p - s.p) <= tol) {
+          touches++; sum += q.p;
+          if (swH.indexOf(q) >= 0) nH++; else nL++;
+        }
+      }
+      if (touches < 2) continue;
+      const lp = sum / touches, dist = Math.abs(p - lp);
+      if (dist > 0.6 * atr) continue;
+      if (!best || dist < best.dist) {
+        const k = nL > nH ? "S" : nH > nL ? "R" : (lp <= p ? "S" : "R");
+        best = { k, p: lp, t: touches, dist };
+      }
+    }
+    return best;
+  }
+
   function detectCandles(B, atr, trend, pos) {
     const n = B.length, c0 = B[n - 1], c1 = B[n - 2], c2 = B[n - 3];
     const bd = b => Math.abs(b.c - b.o), rg = b => b.h - b.l, upB = b => b.c > b.o, dnB = b => b.c < b.o;
@@ -55,13 +97,16 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     if (dnB(c0) && dnB(c1) && dnB(c2) && c0.c < c1.c && c1.c < c2.c && bd(c0) > 0.3 * atr && bd(c1) > 0.3 * atr && bd(c2) > 0.3 * atr && lw(c0) < 0.5 * B0) out.push("CROW3");
     if (upB(c0) && B0 > 0.8 * atr && uw(c0) < 0.1 * R0 && lw(c0) < 0.1 * R0) out.push("MARU_U");
     if (dnB(c0) && B0 > 0.8 * atr && uw(c0) < 0.1 * R0 && lw(c0) < 0.1 * R0) out.push("MARU_D");
+    // Pinzas (mismo mínimo / mismo máximo en dos velas seguidas con color opuesto)
+    if (dnB(c1) && upB(c0) && Math.abs(c1.l - c0.l) < 0.1 * atr && R0 > 0.4 * atr) out.push("TWZ_U");
+    if (upB(c1) && dnB(c0) && Math.abs(c1.h - c0.h) < 0.1 * atr && R0 > 0.4 * atr) out.push("TWZ_D");
     return out;
   }
 
   function analyze(p, say) {
     const B = bars, n = B.length;
     if (n < 7 || !curBar || p == null) {
-      S = { trend: "R", pos: "M", pat: "NONE", atr: S.atr, swH: [], swL: [] };
+      S = { trend: "R", pos: "M", pat: "NONE", atr: S.atr, swH: [], swL: [], bias: 0, lvl: "N", lvlT: 0, mom: 0 };
       return [];
     }
     const K = CFG.swingK;
@@ -109,6 +154,13 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     if (lastSwLp && llp && llp !== lastSwLp) say("📍", `Nuevo mínimo de oscilación en ${llp.toFixed(5)}`, "swl" + llp);
     lastSwHp = lhp; lastSwLp = llp;
 
+    // Acción del precio: nivel probado y momentum
+    const lv = levelNear(swH, swL, p, atr);
+    const closes = B.map(b => b.c);
+    closes.push(p);
+    const e9 = ema(closes, 9), e9p = ema(closes.slice(0, -3), 9), slope = (e9 - e9p) / atr;
+    const mom = slope > 0.25 && p > e9 ? 1 : slope < -0.25 && p < e9 ? -1 : 0;
+
     const last = B[n - 1], prv = B[n - 2], cb = curBar;
     const lastH = swH.length ? swH[swH.length - 1] : null;
     const lastL = swL.length ? swL[swL.length - 1] : null;
@@ -141,6 +193,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       if (brk.dir === "U" && p >= brk.lvl - 0.1 * atr && p <= brk.lvl + 0.3 * atr && cb.c > cb.o) act.RET_UP = 1;
       if (brk.dir === "D" && p <= brk.lvl + 0.1 * atr && p >= brk.lvl - 0.3 * atr && cb.c < cb.o) act.RET_DN = 1;
     }
+    // Rebote en nivel probado: la barra actual tocó el nivel y ya se aleja
+    if (lv) {
+      if (lv.k === "S" && cb.l <= lv.p + 0.2 * atr && p - cb.l > 0.3 * atr && cb.c > cb.o) act.LVL_B = 1;
+      if (lv.k === "R" && cb.h >= lv.p - 0.2 * atr && cb.h - p > 0.3 * atr && cb.c < cb.o) act.LVL_T = 1;
+    }
 
     const fired = [];
     let cur = "NONE";
@@ -164,7 +221,25 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       if (names.some(x => x !== "DOJI")) say("🕯", `Cerró vela ${cdlNow.color}: ${names.map(x => PATN[x]).join(" + ")}`, "cdl" + last.t);
     }
 
-    S = { trend, pos, pat: cur, atr, swH, swL };
+    // Puntaje de confluencia de acción del precio (positivo = alcista, negativo = bajista)
+    let bias = 0;
+    const parts = [];
+    if (trend !== "R") { bias += trend === "U" ? 1 : -1; parts.push("tendencia " + (trend === "U" ? "alcista" : "bajista")); }
+    if (lv) { bias += lv.k === "S" ? 1 : -1; parts.push(`${lv.k === "S" ? "soporte" : "resistencia"} de ${lv.t} toques`); }
+    if (mom) { bias += mom; parts.push("momentum " + (mom > 0 ? "alcista" : "bajista")); }
+    let cd = 0;
+    for (const nm of cdlNow.names) if (nm !== "DOJI" && PAT_DIR[nm]) cd += PAT_DIR[nm] === "HIGHER" ? 1 : -1;
+    cd = Math.max(-2, Math.min(2, cd));
+    if (cd) { bias += cd; parts.push("velas " + (cd > 0 ? "alcistas" : "bajistas")); }
+    if (cur !== "NONE" && PAT_DIR[cur]) { bias += PAT_DIR[cur] === "HIGHER" ? 1 : -1; parts.push(PATN[cur]); }
+
+    const bb = bias >= 2 ? 1 : bias <= -2 ? -1 : 0;
+    if (bb !== lastBB) {
+      if (bb !== 0) say("🧭", `Acción del precio: confluencia ${bb > 0 ? "ALCISTA" : "BAJISTA"} (${bias > 0 ? "+" : ""}${bias}): ${parts.join(", ")}`, "pa" + bb);
+      lastBB = bb;
+    }
+
+    S = { trend, pos, pat: cur, atr, swH, swL, bias, lvl: lv ? lv.k : "N", lvlT: lv ? lv.t : 0, mom };
     return fired;
   }
 
@@ -178,10 +253,19 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   }
   const lcb = st => st.m - CFG.rlZ * Math.sqrt(Math.max(st.v, 1e-6) / st.n);
 
+  // Confluencia de acción del precio respecto a la dirección de la señal
+  function confOf(dir) {
+    const a = (S.bias || 0) * (dir === "HIGHER" ? 1 : -1);
+    return a >= 2 ? "C+" : a <= -2 ? "C-" : "C0";
+  }
+
   function keysFor(src, dir, patName) {
     const pat = patName || S.pat;
     const rel = S.trend === "R" ? "R" : ((S.trend === "U") === (dir === "HIGHER") ? "W" : "A");
-    return [`${src}|${pat}|${rel}|${S.pos}`, `${src}|${pat}|${rel}`, `${src}|${pat}`, src];
+    const base = [`${src}|${pat}|${rel}|${S.pos}`, `${src}|${pat}|${rel}`, `${src}|${pat}`, src];
+    // Los patrones ya llevan su propio contexto; TRI/CRUCE/USR aprenden también por confluencia
+    if (src === "PAT") return base;
+    return [`${src}|${pat}|${rel}|${S.pos}|${confOf(dir)}`].concat(base);
   }
 
   function policy(keys, mn = CFG.rlMinN) {
@@ -194,6 +278,15 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       return { a: "SKIP", k };
     }
     return { a: "UNK", k: "" };
+  }
+
+  // Probabilidad aprendida de acierto al seguir una señal en el contexto actual
+  function probFor(src, dir, patName) {
+    for (const k of keysFor(src, dir, patName)) {
+      const e = rl.Q[k];
+      if (e && e.N >= CFG.rlMinN) return { key: k, n: e.N, p: e.W / e.N, lcb: lcb(e.f) };
+    }
+    return null;
   }
 
   function recordSample(p, expMs, src, dir, keys, patName, isUser = false) {
@@ -277,7 +370,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     getRL: () => rl,
     getState: () => ({ S, bars, curBar, cdlNow }),
     feedBar, resetMarket, analyze,
-    keysFor, policy, recordSample, evalPending,
+    keysFor, policy, probFor, recordSample, evalPending,
     resetRL, saveRLIfDirty, ctxPat
   };
 })();
