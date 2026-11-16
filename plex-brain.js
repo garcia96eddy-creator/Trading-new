@@ -347,7 +347,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   function analyze(p, say) {
     const B = bars, n = B.length;
 
-    if (n<7 || !curBar || p==null) {
+    if (n<5 || !curBar || p==null) {
       S = {
         trend:"R", pos:"M", pat:"NONE", atr:S.atr,
         swH:[], swL:[], bias:0, lvl:"N", lvlT:0, mom:0,
@@ -657,9 +657,12 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     const closedOnly = CFG.strategyRequireClosedBar !== false;
     const strat = {};
 
-    if (CFG.useAdaptiveStrategies !== false && B.length >= 8) {
-      const z = B.length - 1;
-      const c = B[z], q = B[z-1];
+    const strategyBars =
+      !closedOnly && curBar ? B.concat([curBar]) : B;
+
+    if (CFG.useAdaptiveStrategies !== false && strategyBars.length >= 6) {
+      const z = strategyBars.length - 1;
+      const c = strategyBars[z], q = strategyBars[z-1];
 
       const candleRange = Math.max(c.h-c.l, 1e-9);
       const candleBody = Math.abs(c.c-c.o);
@@ -668,7 +671,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       const bull = c.c>c.o;
       const bear = c.c<c.o;
 
-      const recent = B.slice(Math.max(0,z-19),z);
+      const recent = strategyBars.slice(Math.max(0,z-19),z);
       const rangeHigh = Math.max(...recent.map(x=>x.h));
       const rangeLow = Math.min(...recent.map(x=>x.l));
       const width = rangeHigh-rangeLow;

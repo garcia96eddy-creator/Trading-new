@@ -40,9 +40,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     strategyLiquiditySweep: true,
     strategyRange: true,
 
-    // Análisis de velas de un minuto
-    analysisTimeframeMs: 60000,
-    barMs: 60000,
+    // Análisis rápido para operaciones de 30 segundos
+    analysisTimeframeMs: 15000,
+    barMs: 15000,
     maxBars: 120,
     swingK: 2,
     patCooldownMs: 8000,
@@ -55,7 +55,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     strategyMinWinRate: 0.56,
     strategyMinEdge: 0.02,
     strategyMaxSignalsPerBar: 1,
-    strategyRequireClosedBar: true,
+    strategyRequireClosedBar: false,
     strategyAvoidConflict: true,
     strategyPaperLearning: true,
 
@@ -68,14 +68,14 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     // Aprendizaje por refuerzo
     rl: true,
-    rlMode: "gate",
+    rlMode: "learn",
     rlWarmup: 60,
     rlMinN: 15,
     usrMinN: 8,
     rlZ: 1.8,
     rlMinEdge: 0,
     rlCap: 300,
-    rlUnknown: "skip",
+    rlUnknown: "allow",
     payout: 0.87,
     priceStaleMs: 4000,
 

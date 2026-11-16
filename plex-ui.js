@@ -673,6 +673,12 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         c:AMBER,bg:"#3a2f12"
       };
 
+    if(CFG.rlMode!=="gate")
+      return {
+        ic:"🟢",t:"Entradas sin filtro · RL solo aprende",
+        c:GREEN,bg:"#12351f"
+      };
+
     if(rl.total<CFG.rlWarmup)
       return {
         ic:"🟡",t:`Aprendiendo ${rl.total}/${CFG.rlWarmup}`,

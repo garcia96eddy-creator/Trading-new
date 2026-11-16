@@ -581,9 +581,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       ? brain.recordSample(curPrice(), expiryBase(), src, dir, keys, patName, false)
       : null;
 
-    if (isPat && !(ready && CFG.rlMode === "gate"))
-      return null;
-
     if (ready && CFG.rlMode === "gate" &&
       (isPat || rl.total >= CFG.rlWarmup)) {
 
@@ -614,12 +611,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
       rlLast = `RL ${isPat ? patName : src} ${dirWord(dir)}: ${d.a}${d.k ? " [" + d.k + "]" : ""}${from === "Lo aprendido" ? "" : " (tú)"}`;
 
-      if (isPat) {
-        if (d.a !== "FOLLOW" && d.a !== "FADE") {
-          say("📚", `${label}: aún sin evidencia suficiente, solo aprende`, "learn" + label);
-          return null;
-        }
-      } else if (d.a === "SKIP" ||
+      if (d.a === "SKIP" ||
         (d.a === "UNK" && CFG.rlUnknown === "skip")) {
         sess.skipRL++;
         lastEvent = `RL omite ${src} ${dirWord(dir)}`;
