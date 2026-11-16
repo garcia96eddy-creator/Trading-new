@@ -1,9 +1,13 @@
-// PLEX v6.1 - Módulo 3: Estructura de Mercado, Acción del Precio y RL
-// Conserva el motor original e incorpora cinco estrategias adaptativas.
+
+// PLEX v6.2 - Módulo 3: Estructura de Mercado, Acción del Precio y RL
+// Cinco estrategias adaptativas + velas locales + aprendizaje original.
 window.PLEX_MOD = window.PLEX_MOD || {};
 
 (() => {
-  const { CFG, PAT_DIR, PATN, PATD, SRCN, loadCal, saveCal, dirWord, jAdd } = window.PLEX_MOD.config;
+  const {
+    CFG, PAT_DIR, PATN, PATD, SRCN,
+    loadCal, saveCal, dirWord, jAdd
+  } = window.PLEX_MOD.config;
 
   Object.assign(PAT_DIR, {
     LVL_B:"HIGHER", LVL_T:"LOWER", TWZ_U:"HIGHER", TWZ_D:"LOWER",
@@ -38,7 +42,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   });
 
   const RL_KEY = "iqtri_rl4";
-  let rl = Object.assign({ Q:{}, total:0, hist:[], pl:0 }, loadCal(RL_KEY) || {});
+  let rl = Object.assign(
+    { Q:{}, total:0, hist:[], pl:0 },
+    loadCal(RL_KEY) || {}
+  );
+
   if (!rl.seen) rl.seen = {};
   if (!rl.usr) rl.usr = { n:0, w:0, l:0, pl:0 };
 
@@ -93,6 +101,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_BREAK_D:"ruptura bajista seguida de retesteo y cierre por debajo del nivel",
     ST_REJECT_U:"vela cerrada con rechazo de soporte y cierre alcista",
     ST_REJECT_D:"vela cerrada con rechazo de resistencia y cierre bajista",
+    ST_SWEEP_H:"barrido del máximo de swing y cierre de vuelta debajo del nivel",
+    ST_SWEEP_L:"barrido del mínimo de swing y cierre de vuelta encima del nivel",
     ST_RANGE_U:"rebote confirmado en la parte baja de un rango lateral",
     ST_RANGE_D:"rechazo confirmado en la parte alta de un rango lateral"
   });
@@ -107,20 +117,79 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     rlDirty = true;
   };
 
-  function feedBar(p, hi, lo) {
-    const b0 = Math.floor(Date.now() / CFG.barMs) * CFG.barMs;
+  // =========================================================
+  // VELAS LOCALES
+  // Recibe metadatos de Vision si están disponibles.
+  // No supone que el servidor entregue OHLC histórico.
+  // =========================================================
+
+  function feedBar(p, hi, lo, meta) {
+    meta = meta && typeof meta === "object" ? meta : {};
+
+    if (!Number.isFinite(p)) return;
+
+    const tf = Math.max(
+      1000,
+      Number(meta.barTimeframeMs) ||
+      Number(CFG.analysisTimeframeMs) ||
+      Number(CFG.barMs) ||
+      60000
+    );
+
+    const suppliedStart = Number(meta.barStart);
+
+    const b0 = Number.isFinite(suppliedStart) && suppliedStart > 0
+      ? suppliedStart
+      : Math.floor(Date.now() / tf) * tf;
+
+    const o = Number.isFinite(meta.o) ? meta.o : p;
+
+    const highCandidates = [
+      Number(meta.barHigh),
+      Number(hi),
+      p
+    ].filter(Number.isFinite);
+
+    const lowCandidates = [
+      Number(meta.barLow),
+      Number(lo),
+      p
+    ].filter(Number.isFinite);
+
+    const h = Math.max(...highCandidates);
+    const l = Math.min(...lowCandidates);
 
     if (!curBar || curBar.t !== b0) {
       if (curBar) {
         bars.push(curBar);
-        if (bars.length > CFG.maxBars) bars.shift();
+
+        if (bars.length > CFG.maxBars)
+          bars.shift();
       }
-      curBar = { t:b0, o:p, h:hi, l:lo, c:p };
-    } else {
-      if (hi > curBar.h) curBar.h = hi;
-      if (lo < curBar.l) curBar.l = lo;
-      curBar.c = p;
+
+      curBar = {
+        t:b0,
+        o,
+        h,
+        l,
+        c:Number.isFinite(meta.barClose) ? meta.barClose : p,
+        source:meta.barSource || "local",
+        timeframe:tf
+      };
+
+      return;
     }
+
+    // Actualización de la vela que todavía está abierta.
+    if (h > curBar.h) curBar.h = h;
+    if (l < curBar.l) curBar.l = l;
+
+    curBar.c = Number.isFinite(meta.barClose)
+      ? meta.barClose
+      : p;
+
+    curBar.source = meta.barSource || curBar.source || "local";
+    curBar.timeframe = tf;
   }
 
   function resetMarket() {
@@ -129,17 +198,29 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     pending.length = 0;
     structBreak = null;
     brk = null;
+
     S.structure = {
       trend:"R", sequence:"R", event:"NONE",
       bias:0, lastHigh:0, lastLow:0
     };
+
+    prevTrend = null;
+    lastSwHp = 0;
+    lastSwLp = 0;
+    cdlBarT = 0;
+    cdlNow = { t:0, names:[], color:"" };
+
+    for (const k in patState)
+      delete patState[k];
   }
 
   const ema = (arr, n) => {
     const k = 2 / (n + 1);
     let e = arr[0];
+
     for (let i = 1; i < arr.length; i++)
       e = arr[i] * k + e * (1-k);
+
     return e;
   };
 
@@ -155,6 +236,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         if (Math.abs(q.p - s.p) <= tol) {
           touches++;
           sum += q.p;
+
           if (swH.indexOf(q) >= 0) nH++;
           else nL++;
         }
@@ -164,14 +246,17 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
       const lp = sum / touches;
       const dist = Math.abs(p-lp);
+
       if (dist > 0.6*atr) continue;
 
       if (!best || dist < best.dist) {
         const k = nL > nH ? "S" :
           nH > nL ? "R" : (lp <= p ? "S" : "R");
+
         best = { k, p:lp, t:touches, dist };
       }
     }
+
     return best;
   }
 
@@ -192,19 +277,23 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     if (R0>0.5*atr && lw(c0)>=2*B0 &&
         lw(c0)>0.55*R0 && uw(c0)<=0.25*R0 &&
-        (trend==="D" || pos==="B")) out.push("HAMMER");
+        (trend==="D" || pos==="B"))
+      out.push("HAMMER");
 
     if (R0>0.5*atr && uw(c0)>=2*B0 &&
         uw(c0)>0.55*R0 && lw(c0)<=0.25*R0 &&
-        (trend==="U" || pos==="T")) out.push("SHOOT");
+        (trend==="U" || pos==="T"))
+      out.push("SHOOT");
 
     if (dnB(c1) && upB(c0) && c0.o<=c1.c &&
         c0.c>=c1.o && B0>bd(c1) && R0>0.5*atr &&
-        (trend==="D" || pos!=="T")) out.push("ENG_UP");
+        (trend==="D" || pos!=="T"))
+      out.push("ENG_UP");
 
     if (upB(c1) && dnB(c0) && c0.o>=c1.c &&
         c0.c<=c1.o && B0>bd(c1) && R0>0.5*atr &&
-        (trend==="U" || pos!=="B")) out.push("ENG_DN");
+        (trend==="U" || pos!=="B"))
+      out.push("ENG_DN");
 
     if (dnB(c1) && upB(c0) && bd(c1)>0.6*atr &&
         B0<0.5*bd(c1) && c0.o>c1.c && c0.c<c1.o)
@@ -216,11 +305,13 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     if (dnB(c2) && bd(c2)>0.6*atr &&
         bd(c1)<0.3*bd(c2) && upB(c0) &&
-        c0.c>(c2.o+c2.c)/2) out.push("MORN");
+        c0.c>(c2.o+c2.c)/2)
+      out.push("MORN");
 
     if (upB(c2) && bd(c2)>0.6*atr &&
         bd(c1)<0.3*bd(c2) && dnB(c0) &&
-        c0.c<(c2.o+c2.c)/2) out.push("EVEN");
+        c0.c<(c2.o+c2.c)/2)
+      out.push("EVEN");
 
     if (upB(c0) && upB(c1) && upB(c2) &&
         c0.c>c1.c && c1.c>c2.c &&
@@ -265,6 +356,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
           bias:0, lastHigh:0, lastLow:0
         }
       };
+
       return [];
     }
 
@@ -287,6 +379,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       for (let j=1; j<=K; j++) {
         if (!(B[i].h>B[i-j].h && B[i].h>=B[i+j].h))
           hi=false;
+
         if (!(B[i].l<B[i-j].l && B[i].l<=B[i+j].l))
           lo=false;
       }
@@ -310,6 +403,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     if (trend==="R") {
       const w=Math.min(12,n);
       const sl=B[n-1].c-B[n-w].c;
+
       if (sl>1.2*atr) trend="U";
       else if (sl<-1.2*atr) trend="D";
     }
@@ -326,11 +420,13 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     const now=performance.now();
 
     if (prevTrend!==null && trend!==prevTrend) {
-      say("📐",
+      say(
+        "📐",
         trend==="U" ? "La tendencia pasa a ALCISTA" :
         trend==="D" ? "La tendencia pasa a BAJISTA" :
         "El precio queda LATERAL: sin tendencia clara",
-        "tr"+trend);
+        "tr"+trend
+      );
     }
 
     prevTrend=trend;
@@ -354,6 +450,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     const e9=ema(closes,9);
     const e9p=ema(closes.slice(0,-3),9);
     const slope=(e9-e9p)/atr;
+
     const mom=slope>0.25 && p>e9 ? 1 :
       slope<-0.25 && p<e9 ? -1 : 0;
 
@@ -362,8 +459,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     const lastL=swL.length ? swL[swL.length-1] : null;
 
     if (brk) {
-      brk.ext=Math.max(brk.ext,
-        brk.dir==="U" ? p-brk.lvl : brk.lvl-p);
+      brk.ext=Math.max(
+        brk.ext,
+        brk.dir==="U" ? p-brk.lvl : brk.lvl-p
+      );
+
       if (now-brk.t>90000) brk=null;
     }
 
@@ -373,11 +473,15 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     const hPrev=swH.length>=2 ? swH[swH.length-2].p : 0;
     const lPrev=swL.length>=2 ? swL[swL.length-2].p : 0;
 
-    const seqUp=!!(hPrev && lPrev && lastH && lastL &&
-      lastH.p>hPrev && lastL.p>lPrev);
+    const seqUp=!!(
+      hPrev && lPrev && lastH && lastL &&
+      lastH.p>hPrev && lastL.p>lPrev
+    );
 
-    const seqDown=!!(hPrev && lPrev && lastH && lastL &&
-      lastH.p<hPrev && lastL.p<lPrev);
+    const seqDown=!!(
+      hPrev && lPrev && lastH && lastL &&
+      lastH.p<hPrev && lastL.p<lPrev
+    );
 
     const structTrend=seqUp ? "U" : seqDown ? "D" : "R";
 
@@ -389,6 +493,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         act.ST_CHOCH_U=1;
       else
         act.ST_BOS_U=1;
+
       act.BRK_UP=1;
     }
 
@@ -397,32 +502,43 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         act.ST_CHOCH_D=1;
       else
         act.ST_BOS_D=1;
+
       act.BRK_DN=1;
     }
 
-    // Barridos intrabar solo cuando no se exige esperar el cierre.
-    if (CFG.strategyRequireClosedBar === false &&
-        CFG.strategyLiquiditySweep !== false &&
-        lastH && cb.h>lastH.p+0.08*atr &&
-        p<lastH.p-0.02*atr)
+    // Barridos intrabar solo si se desactiva el filtro de vela cerrada.
+    if (
+      CFG.strategyRequireClosedBar === false &&
+      CFG.strategyLiquiditySweep !== false &&
+      lastH &&
+      cb.h>lastH.p+0.08*atr &&
+      p<lastH.p-0.02*atr
+    )
       act.ST_SWEEP_H=1;
 
-    if (CFG.strategyRequireClosedBar === false &&
-        CFG.strategyLiquiditySweep !== false &&
-        lastL && cb.l<lastL.p-0.08*atr &&
-        p>lastL.p+0.02*atr)
+    if (
+      CFG.strategyRequireClosedBar === false &&
+      CFG.strategyLiquiditySweep !== false &&
+      lastL &&
+      cb.l<lastL.p-0.08*atr &&
+      p>lastL.p+0.02*atr
+    )
       act.ST_SWEEP_L=1;
 
     // Retesteos posteriores a la ruptura.
     if (structBreak && now-structBreak.t<=90000) {
-      if (structBreak.dir==="U" &&
-          cb.l<=structBreak.level+0.15*atr &&
-          p>structBreak.level+0.05*atr)
+      if (
+        structBreak.dir==="U" &&
+        cb.l<=structBreak.level+0.15*atr &&
+        p>structBreak.level+0.05*atr
+      )
         act.ST_RET_U=1;
 
-      if (structBreak.dir==="D" &&
-          cb.h>=structBreak.level-0.15*atr &&
-          p<structBreak.level-0.05*atr)
+      if (
+        structBreak.dir==="D" &&
+        cb.h>=structBreak.level-0.15*atr &&
+        p<structBreak.level-0.05*atr
+      )
         act.ST_RET_D=1;
     }
 
@@ -435,27 +551,47 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     if (structBreak && now-structBreak.t>90000)
       structBreak=null;
 
-    // Patrones estructurales ya existentes.
+    // Patrones estructurales originales.
     if (swH.length>=2) {
       const a=swH[swH.length-1], b=swH[swH.length-2];
-      if (a.i-b.i>=2 && Math.abs(a.p-b.p)<0.35*atr &&
-          p<a.p-0.5*atr && p>a.p-2*atr)
+
+      if (
+        a.i-b.i>=2 &&
+        Math.abs(a.p-b.p)<0.35*atr &&
+        p<a.p-0.5*atr &&
+        p>a.p-2*atr
+      )
         act.DTOP=1;
     }
 
     if (swL.length>=2) {
       const a=swL[swL.length-1], b=swL[swL.length-2];
-      if (a.i-b.i>=2 && Math.abs(a.p-b.p)<0.35*atr &&
-          p>a.p+0.5*atr && p<a.p+2*atr)
+
+      if (
+        a.i-b.i>=2 &&
+        Math.abs(a.p-b.p)<0.35*atr &&
+        p>a.p+0.5*atr &&
+        p<a.p+2*atr
+      )
         act.DBOT=1;
     }
 
-    if (trend==="U" && last.c<last.o && prv.c<prv.o &&
-        cb.c>cb.o && p-cb.o>0.2*atr)
+    if (
+      trend==="U" &&
+      last.c<last.o &&
+      prv.c<prv.o &&
+      cb.c>cb.o &&
+      p-cb.o>0.2*atr
+    )
       act.PULL_U=1;
 
-    if (trend==="D" && last.c>last.o && prv.c>prv.o &&
-        cb.c<cb.o && cb.o-p>0.2*atr)
+    if (
+      trend==="D" &&
+      last.c>last.o &&
+      prv.c>prv.o &&
+      cb.c<cb.o &&
+      cb.o-p>0.2*atr
+    )
       act.PULL_D=1;
 
     const body=Math.abs(last.c-last.o);
@@ -478,37 +614,59 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     }
 
     if (brk && brk.ext>0.5*atr) {
-      if (brk.dir==="U" && p>=brk.lvl-0.1*atr &&
-          p<=brk.lvl+0.3*atr && cb.c>cb.o)
+      if (
+        brk.dir==="U" &&
+        p>=brk.lvl-0.1*atr &&
+        p<=brk.lvl+0.3*atr &&
+        cb.c>cb.o
+      )
         act.RET_UP=1;
 
-      if (brk.dir==="D" && p<=brk.lvl+0.1*atr &&
-          p>=brk.lvl-0.3*atr && cb.c<cb.o)
+      if (
+        brk.dir==="D" &&
+        p<=brk.lvl+0.1*atr &&
+        p>=brk.lvl-0.3*atr &&
+        cb.c<cb.o
+      )
         act.RET_DN=1;
     }
 
     if (lv) {
-      if (lv.k==="S" && cb.l<=lv.p+0.2*atr &&
-          p-cb.l>0.3*atr && cb.c>cb.o)
+      if (
+        lv.k==="S" &&
+        cb.l<=lv.p+0.2*atr &&
+        p-cb.l>0.3*atr &&
+        cb.c>cb.o
+      )
         act.LVL_B=1;
 
-      if (lv.k==="R" && cb.h>=lv.p-0.2*atr &&
-          cb.h-p>0.3*atr && cb.c<cb.o)
+      if (
+        lv.k==="R" &&
+        cb.h>=lv.p-0.2*atr &&
+        cb.h-p>0.3*atr &&
+        cb.c<cb.o
+      )
         act.LVL_T=1;
     }
 
-    // Estrategias adaptativas basadas en velas cerradas.
+    // =======================================================
+    // CINCO ESTRATEGIAS ADAPTATIVAS
+    // Solo utilizan barras cerradas si el filtro está activo.
+    // =======================================================
+
     const closedOnly = CFG.strategyRequireClosedBar !== false;
     const strat = {};
 
     if (CFG.useAdaptiveStrategies !== false && B.length >= 8) {
       const z = B.length - 1;
       const c = B[z], q = B[z-1];
+
       const candleRange = Math.max(c.h-c.l, 1e-9);
-      const body = Math.abs(c.c-c.o);
+      const candleBody = Math.abs(c.c-c.o);
       const lowerWick = Math.min(c.o,c.c)-c.l;
       const upperWick = c.h-Math.max(c.o,c.c);
-      const bull = c.c>c.o, bear = c.c<c.o;
+      const bull = c.c>c.o;
+      const bear = c.c<c.o;
 
       const recent = B.slice(Math.max(0,z-19),z);
       const rangeHigh = Math.max(...recent.map(x=>x.h));
@@ -516,13 +674,15 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       const width = rangeHigh-rangeLow;
       const rangePos = width>0 ? (c.c-rangeLow)/width : 0.5;
 
-      const rangeMode = width <= Math.max(atr*5.5,1e-9) &&
+      const rangeMode =
+        width <= Math.max(atr*5.5,1e-9) &&
         Math.abs(c.c-B[Math.max(0,z-8)].c) <= atr*1.8;
 
-      const closedGate = !closedOnly || (curBar && curBar.t !== c.t);
+      const closedGate =
+        !closedOnly || (curBar && curBar.t !== c.t);
 
       if (closedGate) {
-        // 1. Continuación de estructura HH/HL o LH/LL.
+        // 1. Continuación de tendencia HH/HL o LH/LL.
         if (CFG.strategyTrend !== false) {
           if (seqUp && bull && c.c>q.c && c.c>e9)
             strat.ST_TREND_U=1;
@@ -531,7 +691,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
             strat.ST_TREND_D=1;
         }
 
-        // 2. Ruptura y retesteo: q rompe el rango previo y c lo confirma.
+        // 2. Ruptura y retesteo.
         if (CFG.strategyBreakRetest !== false) {
           const prior = B.slice(Math.max(0,z-9),z-1);
 
@@ -542,48 +702,84 @@ window.PLEX_MOD = window.PLEX_MOD || {};
             const brokeUp = q.c>priorHigh+0.03*atr;
             const brokeDown = q.c<priorLow-0.03*atr;
 
-            if (brokeUp && c.l<=priorHigh+0.18*atr &&
-                c.c>priorHigh+0.03*atr && bull)
+            if (
+              brokeUp &&
+              c.l<=priorHigh+0.18*atr &&
+              c.c>priorHigh+0.03*atr &&
+              bull
+            )
               strat.ST_BREAK_U=1;
 
-            if (brokeDown && c.h>=priorLow-0.18*atr &&
-                c.c<priorLow-0.03*atr && bear)
+            if (
+              brokeDown &&
+              c.h>=priorLow-0.18*atr &&
+              c.c<priorLow-0.03*atr &&
+              bear
+            )
               strat.ST_BREAK_D=1;
           }
         }
 
         // 3. Rechazo confirmado en soporte o resistencia.
         if (CFG.strategyRejection !== false && lv) {
-          if (lv.k==="S" && c.l<=lv.p+0.20*atr &&
-              lowerWick>=Math.max(body*1.5,candleRange*0.38) &&
-              bull && c.c>lv.p)
+          if (
+            lv.k==="S" &&
+            c.l<=lv.p+0.20*atr &&
+            lowerWick>=Math.max(candleBody*1.5,candleRange*0.38) &&
+            bull &&
+            c.c>lv.p
+          )
             strat.ST_REJECT_U=1;
 
-          if (lv.k==="R" && c.h>=lv.p-0.20*atr &&
-              upperWick>=Math.max(body*1.5,candleRange*0.38) &&
-              bear && c.c<lv.p)
+          if (
+            lv.k==="R" &&
+            c.h>=lv.p-0.20*atr &&
+            upperWick>=Math.max(candleBody*1.5,candleRange*0.38) &&
+            bear &&
+            c.c<lv.p
+          )
             strat.ST_REJECT_D=1;
         }
 
-        // 4. Barrido de liquidez y cierre de vuelta dentro del swing.
+        // 4. Barrido de liquidez con cierre de vuelta dentro del swing.
         if (CFG.strategyLiquiditySweep !== false) {
-          if (lastH && c.h>lastH.p+0.06*atr &&
-              c.c<lastH.p && upperWick>body*1.2)
+          if (
+            lastH &&
+            c.h>lastH.p+0.06*atr &&
+            c.c<lastH.p &&
+            upperWick>candleBody*1.2
+          )
             strat.ST_SWEEP_H=1;
 
-          if (lastL && c.l<lastL.p-0.06*atr &&
-              c.c>lastL.p && lowerWick>body*1.2)
+          if (
+            lastL &&
+            c.l<lastL.p-0.06*atr &&
+            c.c>lastL.p &&
+            lowerWick>candleBody*1.2
+          )
             strat.ST_SWEEP_L=1;
         }
 
         // 5. Rebote en los extremos de un rango lateral.
-        if (CFG.strategyRange !== false && rangeMode && width>atr*1.2) {
-          if (rangePos<0.25 && bull &&
-              lowerWick>body*0.8 && c.c>rangeLow+width*0.12)
+        if (
+          CFG.strategyRange !== false &&
+          rangeMode &&
+          width>atr*1.2
+        ) {
+          if (
+            rangePos<0.25 &&
+            bull &&
+            lowerWick>candleBody*0.8 &&
+            c.c>rangeLow+width*0.12
+          )
             strat.ST_RANGE_U=1;
 
-          if (rangePos>0.75 && bear &&
-              upperWick>body*0.8 && c.c<rangeHigh-width*0.12)
+          if (
+            rangePos>0.75 &&
+            bear &&
+            upperWick>candleBody*0.8 &&
+            c.c<rangeHigh-width*0.12
+          )
             strat.ST_RANGE_D=1;
         }
       }
@@ -598,8 +794,10 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       if (act[nm]) {
         if (cur==="NONE") cur=nm;
 
-        if (!patState[nm] &&
-            now-(patLast[nm]||0)>CFG.patCooldownMs) {
+        if (
+          !patState[nm] &&
+          now-(patLast[nm]||0)>CFG.patCooldownMs
+        ) {
           patLast[nm]=now;
           fired.push(nm);
           seenInc(nm);
@@ -630,10 +828,13 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         if (PAT_DIR[nm]) fired.push(nm);
       });
 
-      if (names.some(x=>x!=="DOJI"))
-        say("🕯",
+      if (names.some(x=>x!=="DOJI")) {
+        say(
+          "🕯",
           `Cerró vela ${cdlNow.color}: ${names.map(nm=>PATN[nm]).join(" + ")}`,
-          "cdl"+last.t);
+          "cdl"+last.t
+        );
+      }
     }
 
     // Confluencia: tendencia, nivel, momentum, velas y estructura.
@@ -687,25 +888,31 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       structTrend==="D" ? -1 : 0;
 
     bias+=structBias;
+
     if (structDir) bias+=structDir;
 
     if (structEvent!=="NONE") {
-      say("🏗️",
+      say(
+        "🏗️",
         `Estructura: ${PATN[structEvent]} · ${
           seqUp ? "HH/HL" : seqDown ? "LH/LL" : "sin secuencia confirmada"
         }`,
-        "st"+structEvent);
+        "st"+structEvent
+      );
     }
 
     const bb=bias>=2 ? 1 : bias<=-2 ? -1 : 0;
 
     if (bb!==lastBB) {
-      if (bb!==0)
-        say("🧭",
+      if (bb!==0) {
+        say(
+          "🧭",
           `Acción del precio: confluencia ${
             bb>0 ? "ALCISTA":"BAJISTA"
           } (${bias>0?"+":""}${bias}): ${parts.join(", ")}`,
-          "pa"+bb);
+          "pa"+bb
+        );
+      }
 
       lastBB=bb;
     }
@@ -728,9 +935,15 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     return fired;
   }
 
-  // Motor de aprendizaje por refuerzo original.
+  // =========================================================
+  // APRENDIZAJE POR REFUERZO
+  // =========================================================
+
   const ent=k=>rl.Q[k] || (rl.Q[k]={
-    f:{n:0,m:0,v:0}, x:{n:0,m:0,v:0}, W:0, N:0
+    f:{n:0,m:0,v:0},
+    x:{n:0,m:0,v:0},
+    W:0,
+    N:0
   });
 
   function upd(st,r) {
@@ -740,8 +953,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     st.v+=a*(d*(r-st.m)-st.v);
   }
 
-  const lcb=st=>st.m-CFG.rlZ*
-    Math.sqrt(Math.max(st.v,1e-6)/st.n);
+  const lcb=st=>st.n>0
+    ? st.m-CFG.rlZ*Math.sqrt(Math.max(st.v,1e-6)/st.n)
+    : -Infinity;
 
   function confOf(dir) {
     const a=(S.bias||0)*(dir==="HIGHER" ? 1 : -1);
@@ -750,11 +964,13 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   function keysFor(src,dir,patName) {
     const pat=patName || S.pat;
+
     const rel=S.trend==="R" ? "R" :
       ((S.trend==="U")===(dir==="HIGHER") ? "W":"A");
 
-    const st=S.structure ?
-      S.structure.sequence+":"+S.structure.event : "R:NONE";
+    const st=S.structure
+      ? S.structure.sequence+":"+S.structure.event
+      : "R:NONE";
 
     const base=[
       `${src}|${pat}|${rel}|${S.pos}|${st}`,
@@ -773,9 +989,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   function policy(keys,mn=CFG.rlMinN) {
     for (const k of keys) {
       const e=rl.Q[k];
+
       if (!e || e.f.n<mn) continue;
 
-      const lf=lcb(e.f), lx=lcb(e.x);
+      const lf=lcb(e.f);
+      const lx=lcb(e.x);
 
       if (lf>CFG.rlMinEdge && lf>=lx)
         return {a:"FOLLOW",k};
@@ -793,13 +1011,14 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     for (const k of keysFor(src,dir,patName)) {
       const e=rl.Q[k];
 
-      if (e && e.N>=CFG.rlMinN)
+      if (e && e.N>=CFG.rlMinN) {
         return {
           key:k,
           n:e.N,
           p:e.W/e.N,
           lcb:lcb(e.f)
         };
+      }
     }
 
     return null;
@@ -810,13 +1029,21 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     const s={
       exp:performance.now()+expMs,
-      p0:p, dir, keys, src,
+      p0:p,
+      dir,
+      keys,
+      src,
       pat:patName || S.pat,
-      user:isUser, ex:null, tr:null
+      user:isUser,
+      ex:null,
+      tr:null
     };
 
     pending.push(s);
-    if (pending.length>200) pending.shift();
+
+    if (pending.length>200)
+      pending.shift();
+
     return s;
   }
 
@@ -825,9 +1052,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     for (let i=pending.length-1; i>=0; i--) {
       const s=pending[i];
+
       if (t0<s.exp) continue;
 
       pending.splice(i,1);
+
       if (t0-s.exp>5000) continue;
 
       const up=p1>s.p0;
@@ -852,6 +1081,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
         if (!tie) {
           rl.usr.n++;
+
           if (win) rl.usr.w++;
           else rl.usr.l++;
         }
@@ -860,17 +1090,25 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
         const ic=tie ? "➖" : win ? "✅" : "❌";
 
-        say(ic,
+        say(
+          ic,
           `Tu operación ${dirWord(s.dir)}: ${
             tie ? "empate" : win ? "GANÓ":"PERDIÓ"
           } · entró ${s.p0.toFixed(5)}, cerró ${p1.toFixed(5)}`+
           (tie ? "" : ` (${rF>0?"+":""}${rF.toFixed(2)})`),
-          "ures"+s.exp);
+          "ures"+s.exp
+        );
 
         jAdd({
-          t:Date.now(), src:"USR", pat:s.pat,
-          dir:s.dir, zone:"", ack:"",
-          p0:s.p0, p1, r:rF
+          t:Date.now(),
+          src:"USR",
+          pat:s.pat,
+          dir:s.dir,
+          zone:"",
+          ack:"",
+          p0:s.p0,
+          p1,
+          r:rF
         });
 
         rlDirty=true;
@@ -896,7 +1134,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
         rl.pl+=r;
         rl.hist.push(r);
-        if (rl.hist.length>150) rl.hist.shift();
+
+        if (rl.hist.length>150)
+          rl.hist.shift();
 
         const sn=SRCN[s.src] || s.src;
         const bs=sess.bySrc[sn] ||
@@ -904,6 +1144,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
         if (!tie) {
           bs.n++;
+
           if (w2) {
             bs.w++;
             sess.win++;
@@ -929,10 +1170,15 @@ window.PLEX_MOD = window.PLEX_MOD || {};
           s.tr.r=r;
 
           jAdd({
-            t:s.tr.t, src:s.src, pat:s.pat,
-            dir:s.ex, zone:s.tr.zone,
+            t:s.tr.t,
+            src:s.src,
+            pat:s.pat,
+            dir:s.ex,
+            zone:s.tr.zone,
             ack:s.tr.ack==null ? "" : Math.round(s.tr.ack),
-            p0:s.p0, p1, r
+            p0:s.p0,
+            p1,
+            r
           });
         }
       }
@@ -943,8 +1189,12 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   function resetRL() {
     rl={
-      Q:{}, total:0, hist:[], pl:0,
-      seen:{}, usr:{n:0,w:0,l:0,pl:0}
+      Q:{},
+      total:0,
+      hist:[],
+      pl:0,
+      seen:{},
+      usr:{n:0,w:0,l:0,pl:0}
     };
 
     pending.length=0;
@@ -966,8 +1216,16 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   window.PLEX_MOD.brain={
     getRL:()=>rl,
     getState:()=>({S,bars,curBar,cdlNow}),
-    feedBar, resetMarket, analyze,
-    keysFor, policy, probFor, recordSample, evalPending,
-    resetRL, saveRLIfDirty, ctxPat
+    feedBar,
+    resetMarket,
+    analyze,
+    keysFor,
+    policy,
+    probFor,
+    recordSample,
+    evalPending,
+    resetRL,
+    saveRLIfDirty,
+    ctxPat
   };
 })();
