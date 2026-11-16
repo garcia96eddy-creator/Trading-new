@@ -1,3 +1,4 @@
+
 // PLEX v5.5 - Módulo 2: Visión de Canvas, WebSocket, Precio y ZigZag
 window.PLEX_MOD = window.PLEX_MOD || {};
 
