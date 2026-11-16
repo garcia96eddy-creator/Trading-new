@@ -196,8 +196,37 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     return Math.min(balance, Math.round(raw * 100) / 100);
   }
 
+  const parseAmount = value => {
+    let text = String(value == null ? "" : value)
+      .trim()
+      .replace(/[^\d.,-]/g, "");
+
+    if (!text || text.includes("-")) return null;
+
+    const comma = text.lastIndexOf(",");
+    const dot = text.lastIndexOf(".");
+
+    if (comma >= 0 && dot >= 0) {
+      const decimal = comma > dot ? "," : ".";
+      const grouping = decimal === "," ? /\./g : /,/g;
+      text = text.replace(grouping, "");
+      if (decimal === ",") text = text.replace(",", ".");
+    } else if (comma >= 0 || dot >= 0) {
+      const sep = comma >= 0 ? "," : ".";
+      const pieces = text.split(sep);
+      const decimals = pieces[pieces.length - 1].length;
+      text = pieces.length === 2 && decimals > 0 && decimals <= 2
+        ? pieces[0] + "." + pieces[1]
+        : pieces.join("");
+    }
+
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
   function setTradeAmount(amount) {
-    if (!Number.isFinite(amount) || amount <= 0) return false;
+    if (!Number.isFinite(amount) || amount <= 0)
+      return { ok:false, reason:"monto calculado inválido" };
 
     const inputs = [...document.querySelectorAll("input")].filter(el => {
       if (!el.isConnected || el.disabled || el.readOnly) return false;
@@ -205,27 +234,52 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       const r = el.getBoundingClientRect();
       if (!r.width || !r.height) return false;
 
+      const labels = el.labels
+        ? [...el.labels].map(label => label.innerText)
+        : [];
       const hint = [
         el.getAttribute("aria-label"),
         el.getAttribute("placeholder"),
         el.getAttribute("name"),
-        el.parentElement && el.parentElement.innerText
+        el.getAttribute("title"),
+        el.parentElement && el.parentElement.innerText,
+        ...labels
       ].join(" ").toLowerCase();
 
-      return /cantidad|amount|importe|investment|monto/.test(hint) ||
-        (el.type === "number" && r.top > window.innerHeight * 0.35);
+      const amountHint =
+        /cantidad|amount|importe|investment|monto|inversi[oó]n|stake/.test(hint);
+      const numericField =
+        ["number", "text", "tel"].includes(el.type) &&
+        r.top > window.innerHeight * 0.35 &&
+        parseAmount(el.value) != null;
+
+      return amountHint || numericField;
     });
 
-    if (!inputs.length) return false;
+    if (!inputs.length)
+      return {
+        ok:false,
+        reason:"no encontré un campo de monto visible"
+      };
 
     inputs.sort((a, b) => {
-      const score = el =>
-        /cantidad|amount|importe|investment|monto/.test([
+      const score = el => {
+        const labels = el.labels
+          ? [...el.labels].map(label => label.innerText)
+          : [];
+        const hint = [
           el.getAttribute("aria-label"),
           el.getAttribute("placeholder"),
-          el.parentElement && el.parentElement.innerText
-        ].join(" ").toLowerCase()) ? 1 : 0;
+          el.getAttribute("name"),
+          el.getAttribute("title"),
+          el.parentElement && el.parentElement.innerText,
+          ...labels
+        ].join(" ").toLowerCase();
 
+        return (/cantidad|amount|importe|investment|monto|inversi[oó]n|stake/.test(hint) ? 100 : 0) +
+          (el.type === "number" ? 10 : 0) +
+          (parseAmount(el.value) != null ? 1 : 0);
+      };
       return score(b) - score(a);
     });
 
@@ -242,9 +296,14 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
 
-    return Math.abs(
-      (Number(String(el.value).replace(",", ".")) || 0) - amount
-    ) < 0.011;
+    const actual = parseAmount(el.value);
+
+    return actual != null && Math.abs(actual - amount) < 0.011
+      ? { ok:true }
+      : {
+          ok:false,
+          reason:"el campo no aceptó el monto calculado"
+        };
   }
 
   const be = () => 1 / (1 + payoutNow());
@@ -492,16 +551,20 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       return null;
     }
 
-    if (stakeAmount != null && !setTradeAmount(stakeAmount)) {
-      lastEvent = "operación cancelada: no pude verificar el monto";
+    if (stakeAmount != null) {
+      const amountResult = setTradeAmount(stakeAmount);
 
-      say(
-        "⛔",
-        "No se abrió: no pude ajustar/verificar el monto calculado",
-        "stakefail"
-      );
+      if (!amountResult.ok) {
+        lastEvent = `operación cancelada: ${amountResult.reason}`;
 
-      return null;
+        say(
+          "⛔",
+          `No se abrió: ${amountResult.reason}`,
+          "stakefail"
+        );
+
+        return null;
+      }
     }
 
     const zone = CFG.zoneVary && src ? pickZone() : 4;
