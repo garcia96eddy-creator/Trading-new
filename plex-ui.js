@@ -737,22 +737,25 @@ window.PLEX_MOD = window.PLEX_MOD || {};
               v.direction==="LOWER"?"BAJISTA":"—";
             const color=v.direction==="HIGHER"?GREEN:
               v.direction==="LOWER"?RED:AMBER;
-            const status=v.status==="warming"
-              ? `Formando ventana: ${v.bars}/30 velas cerradas`
-              : v.status==="gap"
-                ? "Esperando 30 velas continuas"
-                : v.status==="collecting"
-                  ? `Aprendiendo: ${v.samples} resultados · ${v.matches}/${v.minMatches||12} coincidencias`
-                  : v.status==="signal"
-                    ? `${dir} · límite inferior ${(v.lower*100).toFixed(1)}% · equilibrio ${(v.threshold*100).toFixed(1)}%`
-                    : `Sin ventaja validada · ${v.matches} coincidencias cercanas`;
+            let status;
+
+            if(v.status==="signal")
+              status=`${dir} · secuencia de ${v.length} velas repetida ${v.occurrences} veces`;
+            else if(v.status==="no-consensus")
+              status=`${v.occurrences} apariciones de ${v.length} velas, sin dirección consistente`;
+            else if(v.status==="gap")
+              status="Esperando velas continuas";
+            else if(v.status==="warming")
+              status=`Formando ventana: ${v.bars}/30 velas cerradas`;
+            else
+              status=`Buscando ${v.requiredOccurrences||3} apariciones similares`;
 
             meter.innerHTML+=
               `<div style="margin-top:7px;padding-top:6px;border-top:1px solid #29364a;font-size:10px;color:#9ab">`+
-              `🧠 Estructura variable (30 velas · venc. ${Math.round((v.horizonMs||30000)/1000)} s): `+
+              `🧠 Estructura variable (${v.bars}/30 velas · venc. ${Math.round((v.horizonMs||30000)/1000)} s): `+
               `<b style="color:${color}">${esc(status)}</b>`+
-              (v.status==="signal"||v.status==="no-edge"
-                ? ` · ${v.matches} similares de ${v.samples} muestras`
+              (v.status==="signal"||v.status==="no-consensus"
+                ? ` · ${v.matches} repeticiones previas`
                 : "")+
               `</div>`;
           }

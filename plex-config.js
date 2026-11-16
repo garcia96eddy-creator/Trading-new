@@ -38,13 +38,12 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     maxBars: 120,
     swingK: 2,
     patCooldownMs: 8000,
-    // Sample only after a full non-overlapping 30-candle window.
     seqWindowBars: 30,
-    seqSampleSpacingBars: 30,
-    seqMinNeighbors: 12,
-    seqMaxNeighbors: 30,
+    seqMinLength: 3,
+    seqMaxLength: 10,
+    seqMinMatches: 2,
+    seqMinOccurrences: 3,
     seqMaxDistance: 0.45,
-    seqConfidenceZ: 1.645,
     seqMaxSamples: 500,
 
     // Objetivo de entrada de 30 segundos

@@ -57,11 +57,13 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   const seqStoragePrefix = "iqtri_seq30:";
   let seqAssetKey = "", seqSamples = [], seqPending = [];
   let seqDirty = false, seqSavedAt = 0;
-  let seqLastBarStart = 0, seqLastCapturedBarStart = 0;
+  let seqLastBarStart = 0;
   let seqState = {
     status:"warming", bars:0, samples:0, matches:0,
-    direction:"", lower:0, threshold:0, distance:0,
-    horizonMs:CFG.entryTimeframeMs, minMatches:CFG.seqMinNeighbors
+    occurrences:0, length:0, direction:"", distance:0,
+    horizonMs:CFG.entryTimeframeMs,
+    minMatches:CFG.seqMinMatches,
+    requiredOccurrences:CFG.seqMinOccurrences
   };
 
   let S = {
@@ -181,7 +183,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     if (!seqAssetKey) {
       seqSamples = [];
-      seqLastCapturedBarStart = 0;
     }
 
     structBreak = null;
@@ -227,30 +228,35 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       ? seqSamples.filter(s =>
           s &&
           Array.isArray(s.x) &&
-          s.x.length === CFG.seqWindowBars*4 &&
+          Number.isInteger(s.length) &&
+          s.length >= CFG.seqMinLength &&
+          s.length <= CFG.seqMaxLength &&
+          s.x.length === s.length*4 &&
           s.x.every(Number.isFinite) &&
           [-1,0,1].includes(s.r) &&
-          Number.isFinite(s.barStart)
+          Number.isFinite(s.endBarStart)
         )
       : [];
     if (seqSamples.length>CFG.seqMaxSamples)
       seqSamples=seqSamples.slice(-CFG.seqMaxSamples);
     seqPending = [];
     seqLastBarStart = 0;
-    seqLastCapturedBarStart = seqSamples.reduce(
-      (latest,s) => Math.max(latest,s.barStart),
-      0
-    );
     seqState = {
       status:"warming", bars:0, samples:seqSamples.length, matches:0,
-      direction:"", lower:0, threshold:0, distance:0,
-      horizonMs:horizon, minMatches:CFG.seqMinNeighbors
+      occurrences:0, length:0, direction:"", distance:0,
+      horizonMs:horizon,
+      minMatches:CFG.seqMinMatches,
+      requiredOccurrences:CFG.seqMinOccurrences
     };
   }
 
   function sequenceFeatures(window) {
-    const size = CFG.seqWindowBars;
-    if (!Array.isArray(window) || window.length !== size) return null;
+    if (!Array.isArray(window) ||
+        window.length<CFG.seqMinLength ||
+        window.length>CFG.seqMaxLength)
+      return null;
+
+    const size = window.length;
 
     const tf = Math.max(1000,Number(CFG.analysisTimeframeMs)||60000);
     const returns = [];
@@ -304,9 +310,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   }
 
   function sequenceDistance(a,b) {
-    const size = CFG.seqWindowBars;
+    const size = a && a.length/4;
     if (!Array.isArray(a) || !Array.isArray(b) ||
-        a.length!==size*4 || b.length!==size*4)
+        !Number.isInteger(size) || b.length!==size*4)
       return Infinity;
 
     let sum = 0;
@@ -322,119 +328,118 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     return Math.sqrt(sum/size);
   }
 
-  function wilsonLower(wins,n,z) {
-    if (!n) return 0;
-    const p = wins/n, z2 = z*z;
-    const den = 1+z2/n;
-
-    return Math.max(
-      0,
-      (p+z2/(2*n)-z*Math.sqrt((p*(1-p)+z2/(4*n))/n))/den
-    );
-  }
-
-  function sequenceStep(B,current,p,payout,horizonMs,say) {
+  function sequenceStep(B,current,p,horizonMs,say) {
     if (!current || !Number.isFinite(p) ||
         current.t===seqLastBarStart)
       return null;
 
     seqLastBarStart = current.t;
 
-    const size = CFG.seqWindowBars;
     const horizon = Math.max(
       1000,Number(horizonMs)||Number(CFG.entryTimeframeMs)||30000
     );
-    const sampleWindow = B.slice(-size);
-    const features = sequenceFeatures(sampleWindow);
-    const barsSeen = sampleWindow.length;
-
-    if (!features) {
-      seqState = {
-        status:barsSeen<size ? "warming" : "gap",
-        bars:barsSeen, samples:seqSamples.length, matches:0,
-        direction:"", lower:0, threshold:0, distance:0,
-        horizonMs:horizon, minMatches:CFG.seqMinNeighbors
-      };
-      return null;
-    }
-
-    const pay = Number.isFinite(payout) && payout>0
-      ? payout
-      : CFG.payout;
-    const threshold = 1/(1+pay);
-    const matches = seqSamples
-      .map(s=>({s,d:sequenceDistance(features,s.x)}))
-      .filter(x=>x.d<=CFG.seqMaxDistance)
-      .sort((a,b)=>a.d-b.d)
-      .slice(0,CFG.seqMaxNeighbors);
-    const up = matches.filter(x=>x.s.r===1).length;
-    const down = matches.filter(x=>x.s.r===-1).length;
-    const z = CFG.seqConfidenceZ;
-    const upLower = wilsonLower(up,matches.length,z);
-    const downLower = wilsonLower(down,matches.length,z);
-    let direction = "";
-    let lower = Math.max(upLower,downLower);
-    let status = "no-edge";
-
-    if (matches.length<CFG.seqMinNeighbors) {
-      status = "collecting";
-      lower = 0;
-    } else if (upLower>threshold && upLower>downLower) {
-      direction = "HIGHER";
-      lower = upLower;
-      status = "signal";
-    } else if (downLower>threshold && downLower>upLower) {
-      direction = "LOWER";
-      lower = downLower;
-      status = "signal";
-    }
-
-    const spacing = Math.max(1,Number(CFG.seqSampleSpacingBars)||size)*(
-      Number(current.timeframe)||Number(CFG.analysisTimeframeMs)||60000
+    const timeframe = Number(current.timeframe)||
+      Number(CFG.analysisTimeframeMs)||60000;
+    const windowMs = CFG.seqWindowBars*timeframe;
+    const currentEnd = B.length ? B[B.length-1].t : 0;
+    const barsSeen = Math.min(B.length,CFG.seqWindowBars);
+    const recentSamples = seqSamples.filter(s =>
+      currentEnd-s.endBarStart>=0 &&
+      currentEnd-s.endBarStart+(s.length-1)*timeframe<=windowMs
     );
+    const predictions = [], repeated = [];
+    const maxLength = Math.min(CFG.seqMaxLength,B.length);
 
-    if (
-      Number.isFinite(p) &&
-      (!seqLastCapturedBarStart ||
-        current.t-seqLastCapturedBarStart>=spacing)
-    ) {
+    for (let length=CFG.seqMinLength; length<=maxLength; length++) {
+      const currentFeatures=sequenceFeatures(B.slice(-length));
+      if (!currentFeatures) continue;
+
+      const candidates=recentSamples
+        .filter(s =>
+          s.length===length &&
+          currentEnd-s.endBarStart>=length*timeframe
+        )
+        .map(s=>({s,d:sequenceDistance(currentFeatures,s.x)}))
+        .filter(x=>x.d<=CFG.seqMaxDistance)
+        .sort((a,b)=>a.d-b.d);
+      const chosen=[];
+
+      for (const candidate of candidates) {
+        if (chosen.every(x =>
+          Math.abs(x.s.endBarStart-candidate.s.endBarStart)>=length*timeframe
+        ))
+          chosen.push(candidate);
+
+        if (chosen.length>=CFG.seqMinMatches) break;
+      }
+
+      if (chosen.length<CFG.seqMinMatches) continue;
+
+      const ups=chosen.filter(x=>x.s.r===1).length;
+      const downs=chosen.filter(x=>x.s.r===-1).length;
+      const match={
+        length,
+        matches:chosen.length,
+        distance:chosen.reduce((sum,x)=>sum+x.d,0)/chosen.length
+      };
+
+      repeated.push(match);
+
+      if (ups===chosen.length || downs===chosen.length) {
+        predictions.push(Object.assign({},match,{
+          direction:ups===chosen.length ? "HIGHER":"LOWER"
+        }));
+      }
+    }
+
+    predictions.sort((a,b)=>a.distance-b.distance || b.length-a.length);
+    repeated.sort((a,b)=>a.distance-b.distance || b.length-a.length);
+    const best=predictions[0]||null;
+    const closest=repeated[0]||null;
+    const status=best ? "signal" :
+      closest ? "no-consensus" :
+      barsSeen<CFG.seqWindowBars ? "warming" : "searching";
+
+    for (let length=CFG.seqMinLength; length<=maxLength; length++) {
+      const features=sequenceFeatures(B.slice(-length));
+      if (!features) continue;
+
       seqPending.push({
         exp:performance.now()+horizon,
         p0:p,
         x:features,
-        barStart:current.t
+        length,
+        endBarStart:B[B.length-1].t
       });
-      seqLastCapturedBarStart=current.t;
     }
 
     seqState = {
       status,
       bars:barsSeen,
-      samples:seqSamples.length,
-      matches:matches.length,
-      direction,
-      lower,
-      threshold,
-      distance:matches.length ? matches[0].d : 0,
+      samples:recentSamples.length,
+      matches:best ? best.matches : closest ? closest.matches : 0,
+      occurrences:best
+        ? best.matches+1
+        : closest ? closest.matches+1 : 0,
+      length:best ? best.length : closest ? closest.length : 0,
+      direction:best ? best.direction : "",
+      distance:best ? best.distance : closest ? closest.distance : 0,
       horizonMs:horizon,
-      minMatches:CFG.seqMinNeighbors,
-      up:matches.length ? up/matches.length : 0,
-      down:matches.length ? down/matches.length : 0
+      minMatches:CFG.seqMinMatches,
+      requiredOccurrences:CFG.seqMinOccurrences
     };
 
-    if (direction) {
-      const name = direction==="HIGHER" ? "SEQ_UP" : "SEQ_DN";
-      say(
-        "🧠",
-        `${PATN[name]} · ${matches.length} secuencias similares; `+
-        `límite inferior ${(lower*100).toFixed(1)}% vs equilibrio `+
-        `${(threshold*100).toFixed(1)}%`,
-        "seq"+current.t+direction
-      );
-      return name;
-    }
+    if (!best) return null;
 
-    return null;
+    const name=best.direction==="HIGHER" ? "SEQ_UP":"SEQ_DN";
+    say(
+      "🧠",
+      `${PATN[name]} · secuencia de ${best.length} velas: `+
+      `${best.matches} repeticiones previas coinciden; `+
+      `${best.matches+1} apariciones en total`,
+      "seq"+current.t+best.direction
+    );
+    return name;
   }
 
   function evalSequencePending(t0,p1) {
@@ -450,15 +455,16 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       const r=p1>s.p0 ? 1 : p1<s.p0 ? -1 : 0;
       seqSamples.push({
         x:s.x,
+        length:s.length,
         r,
-        barStart:s.barStart,
+        endBarStart:s.endBarStart,
         t:Date.now()
       });
 
       if (seqSamples.length>CFG.seqMaxSamples)
         seqSamples.shift();
 
-      seqState.samples=seqSamples.length;
+      seqState.samples++;
       seqDirty=true;
     }
   }
@@ -593,9 +599,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     return out;
   }
 
-  function analyze(p, say, payout, horizonMs) {
+  function analyze(p, say, horizonMs) {
     const B = bars, n = B.length;
-    const sequenceSignal = sequenceStep(B,curBar,p,payout,horizonMs,say);
+    const sequenceSignal = sequenceStep(B,curBar,p,horizonMs,say);
 
     if (n<7 || !curBar || p==null) {
       S = {
@@ -1315,12 +1321,13 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     saveCal(RL_KEY,rl);
     seqSamples=[];
     seqPending=[];
-    seqLastCapturedBarStart=0;
     seqDirty=false;
     seqState={
       status:"warming", bars:0, samples:0, matches:0,
-      direction:"", lower:0, threshold:0, distance:0,
-      horizonMs:CFG.entryTimeframeMs, minMatches:CFG.seqMinNeighbors
+      occurrences:0, length:0, direction:"", distance:0,
+      horizonMs:CFG.entryTimeframeMs,
+      minMatches:CFG.seqMinMatches,
+      requiredOccurrences:CFG.seqMinOccurrences
     };
 
     if (seqAssetKey)

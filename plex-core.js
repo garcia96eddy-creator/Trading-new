@@ -550,10 +550,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     if (isSeq && S.variablePattern) {
       const v=S.variablePattern;
       why.lines.push(
-        `Modelo variable: ${v.matches} coincidencias cercanas entre `+
-        `${v.samples} resultados; límite inferior `+
-        `${(v.lower*100).toFixed(1)}% frente a equilibrio `+
-        `${(v.threshold*100).toFixed(1)}%.`
+        `Modelo variable: secuencia de ${v.length} velas, `+
+        `${v.matches} repeticiones previas consistentes `+
+        `(${v.occurrences} apariciones en total) dentro de las últimas 30.`
       );
     }
 
@@ -754,7 +753,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         fired = brain.analyze(
           curPrice(),
           say,
-          payoutNow(),
           expiryBase()
         ) || [];
       }
