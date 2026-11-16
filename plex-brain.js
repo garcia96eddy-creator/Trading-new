@@ -1,6 +1,6 @@
 
 // PLEX v6.2 - Módulo 3: Estructura de Mercado, Acción del Precio y RL
-// Cinco estrategias adaptativas + velas locales + aprendizaje original.
+// Velas locales + aprendizaje original.
 window.PLEX_MOD = window.PLEX_MOD || {};
 
 (() => {
@@ -71,41 +71,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     "ST_SWEEP_H","ST_SWEEP_L","ST_RET_U","ST_RET_D",
     "BRK_UP","BRK_DN","DBOT","DTOP","PULL_U","PULL_D",
     "REJ_B","REJ_T","INS_UP","INS_DN","RET_UP","RET_DN",
-    "LVL_B","LVL_T",
-    "ST_TREND_U","ST_TREND_D","ST_BREAK_U","ST_BREAK_D",
-    "ST_REJECT_U","ST_REJECT_D","ST_RANGE_U","ST_RANGE_D"
+    "LVL_B","LVL_T"
   ];
-
-  Object.assign(PAT_DIR, {
-    ST_TREND_U:"HIGHER", ST_TREND_D:"LOWER",
-    ST_BREAK_U:"HIGHER", ST_BREAK_D:"LOWER",
-    ST_REJECT_U:"HIGHER", ST_REJECT_D:"LOWER",
-    ST_RANGE_U:"HIGHER", ST_RANGE_D:"LOWER"
-  });
-
-  Object.assign(PATN, {
-    ST_TREND_U:"Continuación alcista HH/HL",
-    ST_TREND_D:"Continuación bajista LH/LL",
-    ST_BREAK_U:"Ruptura y retesteo alcista",
-    ST_BREAK_D:"Ruptura y retesteo bajista",
-    ST_REJECT_U:"Rechazo alcista de nivel",
-    ST_REJECT_D:"Rechazo bajista de nivel",
-    ST_RANGE_U:"Rebote alcista en rango",
-    ST_RANGE_D:"Rebote bajista en rango"
-  });
-
-  Object.assign(PATD, {
-    ST_TREND_U:"estructura HH/HL y cierre confirmado a favor de la tendencia",
-    ST_TREND_D:"estructura LH/LL y cierre confirmado a favor de la tendencia",
-    ST_BREAK_U:"ruptura alcista seguida de retesteo y cierre por encima del nivel",
-    ST_BREAK_D:"ruptura bajista seguida de retesteo y cierre por debajo del nivel",
-    ST_REJECT_U:"vela cerrada con rechazo de soporte y cierre alcista",
-    ST_REJECT_D:"vela cerrada con rechazo de resistencia y cierre bajista",
-    ST_SWEEP_H:"barrido del máximo de swing y cierre de vuelta debajo del nivel",
-    ST_SWEEP_L:"barrido del mínimo de swing y cierre de vuelta encima del nivel",
-    ST_RANGE_U:"rebote confirmado en la parte baja de un rango lateral",
-    ST_RANGE_D:"rechazo confirmado en la parte alta de un rango lateral"
-  });
 
   let cdlBarT = 0;
   let cdlNow = { t:0, names:[], color:"" };
@@ -347,7 +314,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   function analyze(p, say) {
     const B = bars, n = B.length;
 
-    if (n<5 || !curBar || p==null) {
+    if (n<7 || !curBar || p==null) {
       S = {
         trend:"R", pos:"M", pat:"NONE", atr:S.atr,
         swH:[], swL:[], bias:0, lvl:"N", lvlT:0, mom:0,
@@ -509,7 +476,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     // Barridos intrabar solo si se desactiva el filtro de vela cerrada.
     if (
       CFG.strategyRequireClosedBar === false &&
-      CFG.strategyLiquiditySweep !== false &&
       lastH &&
       cb.h>lastH.p+0.08*atr &&
       p<lastH.p-0.02*atr
@@ -518,7 +484,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     if (
       CFG.strategyRequireClosedBar === false &&
-      CFG.strategyLiquiditySweep !== false &&
       lastL &&
       cb.l<lastL.p-0.08*atr &&
       p>lastL.p+0.02*atr
@@ -648,147 +613,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       )
         act.LVL_T=1;
     }
-
-    // =======================================================
-    // CINCO ESTRATEGIAS ADAPTATIVAS
-    // Solo utilizan barras cerradas si el filtro está activo.
-    // =======================================================
-
-    const closedOnly = CFG.strategyRequireClosedBar !== false;
-    const strat = {};
-
-    const strategyBars =
-      !closedOnly && curBar ? B.concat([curBar]) : B;
-
-    if (CFG.useAdaptiveStrategies !== false && strategyBars.length >= 6) {
-      const z = strategyBars.length - 1;
-      const c = strategyBars[z], q = strategyBars[z-1];
-
-      const candleRange = Math.max(c.h-c.l, 1e-9);
-      const candleBody = Math.abs(c.c-c.o);
-      const lowerWick = Math.min(c.o,c.c)-c.l;
-      const upperWick = c.h-Math.max(c.o,c.c);
-      const bull = c.c>c.o;
-      const bear = c.c<c.o;
-
-      const recent = strategyBars.slice(Math.max(0,z-19),z);
-      const rangeHigh = Math.max(...recent.map(x=>x.h));
-      const rangeLow = Math.min(...recent.map(x=>x.l));
-      const width = rangeHigh-rangeLow;
-      const rangePos = width>0 ? (c.c-rangeLow)/width : 0.5;
-
-      const rangeMode =
-        width <= Math.max(atr*5.5,1e-9) &&
-        Math.abs(c.c-B[Math.max(0,z-8)].c) <= atr*1.8;
-
-      const closedGate =
-        !closedOnly || (curBar && curBar.t !== c.t);
-
-      if (closedGate) {
-        // 1. Continuación de tendencia HH/HL o LH/LL.
-        if (CFG.strategyTrend !== false) {
-          if (seqUp && bull && c.c>q.c && c.c>e9)
-            strat.ST_TREND_U=1;
-
-          if (seqDown && bear && c.c<q.c && c.c<e9)
-            strat.ST_TREND_D=1;
-        }
-
-        // 2. Ruptura y retesteo.
-        if (CFG.strategyBreakRetest !== false) {
-          const prior = B.slice(Math.max(0,z-9),z-1);
-
-          if (prior.length >= 3) {
-            const priorHigh = Math.max(...prior.map(x=>x.h));
-            const priorLow = Math.min(...prior.map(x=>x.l));
-
-            const brokeUp = q.c>priorHigh+0.03*atr;
-            const brokeDown = q.c<priorLow-0.03*atr;
-
-            if (
-              brokeUp &&
-              c.l<=priorHigh+0.18*atr &&
-              c.c>priorHigh+0.03*atr &&
-              bull
-            )
-              strat.ST_BREAK_U=1;
-
-            if (
-              brokeDown &&
-              c.h>=priorLow-0.18*atr &&
-              c.c<priorLow-0.03*atr &&
-              bear
-            )
-              strat.ST_BREAK_D=1;
-          }
-        }
-
-        // 3. Rechazo confirmado en soporte o resistencia.
-        if (CFG.strategyRejection !== false && lv) {
-          if (
-            lv.k==="S" &&
-            c.l<=lv.p+0.20*atr &&
-            lowerWick>=Math.max(candleBody*1.5,candleRange*0.38) &&
-            bull &&
-            c.c>lv.p
-          )
-            strat.ST_REJECT_U=1;
-
-          if (
-            lv.k==="R" &&
-            c.h>=lv.p-0.20*atr &&
-            upperWick>=Math.max(candleBody*1.5,candleRange*0.38) &&
-            bear &&
-            c.c<lv.p
-          )
-            strat.ST_REJECT_D=1;
-        }
-
-        // 4. Barrido de liquidez con cierre de vuelta dentro del swing.
-        if (CFG.strategyLiquiditySweep !== false) {
-          if (
-            lastH &&
-            c.h>lastH.p+0.06*atr &&
-            c.c<lastH.p &&
-            upperWick>candleBody*1.2
-          )
-            strat.ST_SWEEP_H=1;
-
-          if (
-            lastL &&
-            c.l<lastL.p-0.06*atr &&
-            c.c>lastL.p &&
-            lowerWick>candleBody*1.2
-          )
-            strat.ST_SWEEP_L=1;
-        }
-
-        // 5. Rebote en los extremos de un rango lateral.
-        if (
-          CFG.strategyRange !== false &&
-          rangeMode &&
-          width>atr*1.2
-        ) {
-          if (
-            rangePos<0.25 &&
-            bull &&
-            lowerWick>candleBody*0.8 &&
-            c.c>rangeLow+width*0.12
-          )
-            strat.ST_RANGE_U=1;
-
-          if (
-            rangePos>0.75 &&
-            bear &&
-            upperWick>candleBody*0.8 &&
-            c.c<rangeHigh-width*0.12
-          )
-            strat.ST_RANGE_D=1;
-        }
-      }
-    }
-
-    Object.assign(act,strat);
 
     const fired=[];
     let cur="NONE";

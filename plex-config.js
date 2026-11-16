@@ -32,17 +32,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     useCross: true,
     usePatterns: true,
 
-    // Cinco estrategias nuevas
-    useAdaptiveStrategies: true,
-    strategyTrend: true,
-    strategyBreakRetest: true,
-    strategyRejection: true,
-    strategyLiquiditySweep: true,
-    strategyRange: true,
-
-    // Análisis rápido para operaciones de 30 segundos
-    analysisTimeframeMs: 15000,
-    barMs: 15000,
+    // Análisis de velas de un minuto
+    analysisTimeframeMs: 60000,
+    barMs: 60000,
     maxBars: 120,
     swingK: 2,
     patCooldownMs: 8000,
@@ -50,14 +42,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     // Objetivo de entrada de 30 segundos
     entryTimeframeMs: 30000,
 
-    // Filtros adaptativos
+    // Aprendizaje por refuerzo
     strategyMinSamples: 30,
-    strategyMinWinRate: 0.56,
-    strategyMinEdge: 0.02,
-    strategyMaxSignalsPerBar: 1,
-    strategyRequireClosedBar: false,
-    strategyAvoidConflict: true,
-    strategyPaperLearning: true,
+    strategyRequireClosedBar: true,
 
     // Zigzag original
     confirmMs: 500,
@@ -68,14 +55,14 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     // Aprendizaje por refuerzo
     rl: true,
-    rlMode: "learn",
+    rlMode: "gate",
     rlWarmup: 60,
     rlMinN: 15,
     usrMinN: 8,
     rlZ: 1.8,
     rlMinEdge: 0,
     rlCap: 300,
-    rlUnknown: "allow",
+    rlUnknown: "skip",
     payout: 0.87,
     priceStaleMs: 4000,
 
@@ -138,15 +125,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_RET_U: "HIGHER",
     ST_RET_D: "LOWER",
 
-    // Estrategias adaptativas
-    ST_TREND_U: "HIGHER",
-    ST_TREND_D: "LOWER",
-    ST_BREAK_U: "HIGHER",
-    ST_BREAK_D: "LOWER",
-    ST_REJECT_U: "HIGHER",
-    ST_REJECT_D: "LOWER",
-    ST_RANGE_U: "HIGHER",
-    ST_RANGE_D: "LOWER"
   };
 
   const PATN = {
@@ -188,16 +166,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_SWEEP_H: "Barrido de liquidez superior",
     ST_SWEEP_L: "Barrido de liquidez inferior",
     ST_RET_U: "Retesteo alcista",
-    ST_RET_D: "Retesteo bajista",
-
-    ST_TREND_U: "Continuación de tendencia alcista",
-    ST_TREND_D: "Continuación de tendencia bajista",
-    ST_BREAK_U: "Ruptura y retesteo alcista",
-    ST_BREAK_D: "Ruptura y retesteo bajista",
-    ST_REJECT_U: "Rechazo de soporte",
-    ST_REJECT_D: "Rechazo de resistencia",
-    ST_RANGE_U: "Rebote alcista en rango",
-    ST_RANGE_D: "Rebote bajista en rango"
+    ST_RET_D: "Retesteo bajista"
   };
 
   const PATD = {
@@ -234,24 +203,14 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_SWEEP_H: "El precio superó un máximo y retrocedió.",
     ST_SWEEP_L: "El precio perforó un mínimo y recuperó.",
     ST_RET_U: "Retesteo de nivel roto al alza.",
-    ST_RET_D: "Retesteo de nivel roto a la baja.",
-
-    ST_TREND_U: "Continuación de estructura HH/HL.",
-    ST_TREND_D: "Continuación de estructura LH/LL.",
-    ST_BREAK_U: "Ruptura alcista seguida de retesteo.",
-    ST_BREAK_D: "Ruptura bajista seguida de retesteo.",
-    ST_REJECT_U: "Rechazo de una zona de soporte.",
-    ST_REJECT_D: "Rechazo de una zona de resistencia.",
-    ST_RANGE_U: "Rebote desde la parte baja de un rango.",
-    ST_RANGE_D: "Rebote desde la parte alta de un rango."
+    ST_RET_D: "Retesteo de nivel roto a la baja."
   };
 
   const SRCN = {
     TRI: "Triángulo",
     CRUCE: "Cruce",
     PAT: "Patrón",
-    USR: "Tú",
-    STRATEGY: "Estrategia adaptativa"
+    USR: "Tú"
   };
 
   const TRN2 = {

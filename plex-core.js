@@ -611,7 +611,12 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
       rlLast = `RL ${isPat ? patName : src} ${dirWord(dir)}: ${d.a}${d.k ? " [" + d.k + "]" : ""}${from === "Lo aprendido" ? "" : " (tú)"}`;
 
-      if (d.a === "SKIP" ||
+      if (isPat) {
+        if (d.a !== "FOLLOW" && d.a !== "FADE") {
+          say("📚", `${label}: aún sin evidencia suficiente, solo aprende`, "learn" + label);
+          return null;
+        }
+      } else if (d.a === "SKIP" ||
         (d.a === "UNK" && CFG.rlUnknown === "skip")) {
         sess.skipRL++;
         lastEvent = `RL omite ${src} ${dirWord(dir)}`;
