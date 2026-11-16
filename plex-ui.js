@@ -1,4 +1,4 @@
-// PLEX v5.6 - Módulo 4: Interfaz Gráfica, Panel Flotante y Gráficas
+// PLEX v5.8 - Módulo 4: Interfaz Gráfica (UI/UX visual: chips, medidores y tarjetas, poco texto)
 window.PLEX_MOD = window.PLEX_MOD || {};
 
 (() => {
@@ -9,7 +9,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   const ui = Object.assign({ open: false, x: 4, y: 108 }, loadCal("iqtri_ui") || {});
   if (ui.sound === false) CFG.sound = false;
 
-  const GREEN = "#3ddc84", RED = "#ff5c5c", AMBER = "#ffc857", BLUE = "#5cc8ff";
+  const GREEN = "#3ddc84", RED = "#ff5c5c", AMBER = "#ffc857", BLUE = "#5cc8ff", GREY = "#8aa";
+  const FONT = "system-ui,-apple-system,'Segoe UI',Roboto,sans-serif";
   const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
   // Iconos compactos por patrón (el color indica la dirección: verde sube, rojo baja, gris neutro)
@@ -19,7 +20,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     INS_UP: "▣", INS_DN: "▣", RET_UP: "↻", RET_DN: "↻",
     HAMMER: "🔨", SHOOT: "🌠", ENG_UP: "🟩", ENG_DN: "🟥",
     HARAMI_U: "◩", HARAMI_D: "◩", MORN: "🌅", EVEN: "🌇",
-    SOLD3: "3▲", CROW3: "3▼", MARU_U: "█", MARU_D: "█", DOJI: "✚"
+    SOLD3: "3▲", CROW3: "3▼", MARU_U: "█", MARU_D: "█", DOJI: "✚",
+    LVL_B: "⤒", LVL_T: "⤓", TWZ_U: "⩔", TWZ_D: "⩔"
   };
   const SRC_ICON = { TRI: "🔺", CRUCE: "🔀", PAT: "🧩", USR: "👤" };
   const pGlyph = k => PGLYPH[k] || "•";
@@ -33,14 +35,28 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     return e;
   };
 
-  const box = el("div", `position:fixed;left:${ui.x}px;top:${ui.y}px;z-index:2147483647;font:10px monospace;`);
-  const head = el("div", "display:inline-block;background:rgba(0,0,0,.65);color:#0f0;padding:3px 6px;border-radius:6px;white-space:pre;" +
+  // ---------- Piezas visuales reutilizables ----------
+  const CARD = "background:#141c2a;border-radius:10px;padding:8px 10px";
+  const ELL = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+  const chip = (txt, col) => `<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:#0f1724;border:1px solid rgba(255,255,255,.12);color:${col};font-size:10px;white-space:nowrap">${txt}</span>`;
+  const kpi = (v, l, c) => `<div style="background:#141c2a;border-radius:10px;padding:7px 2px;text-align:center;min-width:0">` +
+    `<div style="font-size:16px;font-weight:bold;color:${c};line-height:1.1;${ELL}">${v}</div>` +
+    `<div style="color:${GREY};font-size:9px;margin-top:2px;${ELL}">${l}</div></div>`;
+  const tile = (icon, v, l, c) => `<div style="background:#141c2a;border-radius:10px;padding:6px 2px;text-align:center;min-width:0">` +
+    `<div style="font-size:15px;line-height:1">${icon}</div>` +
+    `<div style="font-size:12px;font-weight:bold;color:${c || "#cfe"};margin-top:3px;padding:0 3px;${ELL}">${v}</div>` +
+    `<div style="color:${GREY};font-size:9px;margin-top:1px;padding:0 3px;${ELL}">${l}</div></div>`;
+  const secT = (pn, t) => el("div", "margin:10px 0 4px;color:#9ab;font-weight:bold;font-size:11px", pn, t);
+
+  // ---------- Contenedor principal ----------
+  const box = el("div", `position:fixed;left:${ui.x}px;top:${ui.y}px;z-index:2147483647;font:10px ${FONT};`);
+  const head = el("div", "display:inline-block;background:rgba(0,0,0,.7);color:#cfe;padding:4px 7px;border-radius:8px;" +
     "touch-action:none;user-select:none;-webkit-user-select:none;line-height:1.3;border:1px solid rgba(255,255,255,.15)", box);
 
-  const body = el("div", "display:none;margin-top:3px;width:300px;max-width:96vw;font-size:11px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;background:rgba(8,12,20,.94);" +
-    "border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:6px;color:#cfe;box-sizing:border-box", box);
+  const body = el("div", `display:none;margin-top:3px;width:300px;max-width:96vw;font:12px ${FONT};overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;background:rgba(8,12,20,.95);` +
+    "border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:7px;color:#cfe;box-sizing:border-box", box);
 
-  const tabsBar = el("div", "display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-bottom:6px", body);
+  const tabsBar = el("div", "display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:6px", body);
   const panes = [], tabBtns = [];
   let renderFn = () => {};
 
@@ -52,49 +68,71 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     body.scrollTop = 0;
   };
 
-  ["📊 Resumen", "📰 En vivo", "🧠 Aprende", "⚙️ Ajustes"].forEach((t, i) => {
-    const bt = el("button", "border:0;border-radius:8px;font:10px monospace;padding:8px 0;background:#141c2a;color:#8aa;white-space:nowrap;overflow:hidden", tabsBar, t);
+  [["📊", "Resumen"], ["📰", "En vivo"], ["🧠", "Aprende"], ["⚙️", "Ajustes"]].forEach(([ic, lb], i) => {
+    const bt = el("button", `border:0;border-radius:10px;font-family:${FONT};padding:6px 0;background:#141c2a;color:#8aa`, tabsBar);
+    bt.innerHTML = `<div style="font-size:15px;line-height:1">${ic}</div><div style="font-size:9px;margin-top:2px">${lb}</div>`;
     bt.addEventListener("click", e => { e.stopPropagation(); setTab(i); renderFn(); });
     tabBtns.push(bt);
     panes.push(el("div", "", body));
   });
 
-  const sec = (pn, t) => el("div", "margin:7px 0 2px;color:#9ab;font-weight:bold", pn, t);
-  const CARD = "background:#141c2a;border-radius:8px;padding:6px 8px;line-height:1.45";
-
-  // Pestaña 1: Resumen
-  const chips = el("div", "display:grid;grid-template-columns:repeat(3,1fr);gap:4px", panes[0]);
-  const banner = el("div", "margin-top:5px;padding:5px 7px;border-radius:8px;background:#141c2a;line-height:1.35", panes[0]);
-  sec(panes[0], "📈 Estructura del precio");
-  const cvBars = el("canvas", "width:100%;height:72px;border-radius:6px;display:block", panes[0]);
+  // ---------- Pestaña 1: Resumen ----------
+  const stBar = el("div", "", panes[0]);
+  const kpis = el("div", "display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:6px", panes[0]);
+  const mkt = el("div", CARD + ";margin-top:6px", panes[0]);
+  const meter = el("div", CARD + ";margin-top:6px", panes[0]);
+  const chartCard = el("div", CARD + ";margin-top:6px;padding:6px", panes[0]);
+  const cvBars = el("canvas", "width:100%;height:72px;border-radius:6px;display:block", chartCard);
   cvBars.width = 280; cvBars.height = 72;
-  const barsNote = el("div", "color:#8aa;margin-top:2px;line-height:1.3", panes[0]);
-  sec(panes[0], "💰 Resultado de entradas");
-  const cvPL = el("canvas", "width:100%;height:36px;border-radius:6px;display:block", panes[0]);
+  el("div", `color:${GREY};font-size:9px;margin-top:3px`, chartCard, "🟧 máximo · 🟦 mínimo");
+  const plCard = el("div", CARD + ";margin-top:6px;padding:6px 8px", panes[0]);
+  const plHead = el("div", "display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;color:#9ab;font-size:11px", plCard);
+  el("span", "", plHead, "💰 Resultado de entradas");
+  const plVal = el("b", "", plHead);
+  const cvPL = el("canvas", "width:100%;height:36px;border-radius:6px;display:block", plCard);
   cvPL.width = 280; cvPL.height = 36;
-  sec(panes[0], "📝 Resumen de la sesión");
-  const sumBox = el("div", CARD, panes[0]);
-  const det = el("details", "margin-top:8px", panes[0]);
-  el("summary", "color:#9ab;padding:4px 0", det, "🔧 Detalles técnicos");
-  const stat = el("div", "margin-top:3px;white-space:pre-wrap;line-height:1.3;color:#9fc", det);
+  const detS = el("details", "margin-top:8px", panes[0]);
+  el("summary", "color:#9ab;padding:5px 0", detS, "📝 Sesión");
+  const sumBox = el("div", CARD + ";line-height:1.5;font-size:11px", detS);
+  const detT = el("details", "margin-top:4px", panes[0]);
+  el("summary", "color:#9ab;padding:5px 0", detT, "🔧 Detalles técnicos");
+  const stat = el("div", "margin-top:3px;white-space:pre-wrap;line-height:1.3;color:#9fc;font:10px monospace", detT);
 
-  // Pestaña 2: En vivo
-  sec(panes[1], "👀 Ahora mismo");
-  const nowBox = el("div", CARD, panes[1]);
-  sec(panes[1], "🎯 Por qué entré (última entrada)");
-  const whyBox = el("div", CARD, panes[1]);
-  sec(panes[1], "📰 Qué ha pasado");
-  const feed = el("div", "line-height:1.4", panes[1]);
+  // ---------- Pestaña 2: En vivo ----------
+  const nowStatus = el("div", "", panes[1]);
+  const nowGrid = el("div", "display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:6px", panes[1]);
+  secT(panes[1], "🎯 Última entrada");
+  const whyCard = el("div", CARD, panes[1]);
+  const whyHead = el("div", "", whyCard);
+  const whyDet = el("details", "margin-top:4px", whyCard);
+  el("summary", `color:${GREY};font-size:11px;padding:3px 0`, whyDet, "Ver motivos");
+  const whyBody = el("div", "line-height:1.5;font-size:11px;color:#bcd", whyDet);
+  const feedT = secT(panes[1], "📰 Qué ha pasado");
+  el("span", `color:#789;font-weight:normal;font-size:9px;margin-left:6px`, feedT, "toca para ver completo");
+  const feed = el("div", "", panes[1]);
+  const expanded = new Set();
+  let feedHtml = "";
+  feed.addEventListener("click", e => {
+    e.stopPropagation();
+    const r = e.target.closest("[data-t]");
+    if (!r) return;
+    const k = r.dataset.t;
+    if (expanded.has(k)) expanded.delete(k); else expanded.add(k);
+    feedHtml = "";
+    renderFn();
+  });
 
-  // Pestaña 3: Aprende (compacta: iconos + filas de una línea)
-  const seenTitle = sec(panes[2], "🧩 Patrones vistos");
+  // ---------- Pestaña 3: Aprende ----------
+  const seenTitle = secT(panes[2], "🧩 Patrones vistos");
+  seenTitle.style.marginTop = "2px";
   const seenBox = el("div", "display:grid;grid-template-columns:repeat(6,1fr);gap:3px", panes[2]);
-  const seenInfo = el("div", "margin:4px 0 2px;padding:4px 6px;border-radius:6px;background:#141c2a;color:#8aa;font-size:10px;line-height:1.3;min-height:14px", panes[2]);
-  sec(panes[2], "📊 Rendimiento");
+  const seenInfo = el("div", `margin:4px 0 2px;padding:5px 7px;border-radius:8px;background:#141c2a;color:${GREY};font-size:11px;line-height:1.35;min-height:16px`, panes[2]);
+  secT(panes[2], "📊 Rendimiento");
   const tbl = el("div", "", panes[2]);
-  const legend = el("div", "color:#789;font-size:9px;margin-top:4px;line-height:1.4", panes[2],
+  const legDet = el("details", "margin-top:6px", panes[2]);
+  el("summary", `color:${GREY};font-size:10px;padding:3px 0`, legDet, "Leyenda");
+  const legend = el("div", "color:#789;font-size:10px;line-height:1.5;white-space:pre-line", legDet,
     "✅ Seguir · 🔄 Invertir · ⛔ Evitar · ⏳ Pocos datos · │ mínimo\n🔺 Triángulo · 🔀 Cruce · 🧩 Patrón · 👤 Tú");
-  legend.style.whiteSpace = "pre-line";
   let seenHtml = "", seenInfoHtml = "", tblHtml = "";
 
   seenBox.addEventListener("click", e => {
@@ -106,41 +144,57 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     renderFn();
   });
 
-  // Pestaña 4: Ajustes
+  // ---------- Pestaña 4: Ajustes ----------
   const btns = el("div", "display:grid;grid-template-columns:1fr 1fr;gap:5px", panes[3]);
+  const mkSec = t => el("div", `grid-column:1/-1;color:${GREY};font-size:10px;margin-top:4px`, btns, t);
   const mk = (txt, fn) => {
-    const bt = el("button", "background:#1d2535;color:#fff;border:1px solid #4a5670;border-radius:8px;font:11px monospace;padding:9px 3px;width:100%", btns, txt);
+    const bt = el("button", `background:#1d2535;color:#fff;border:1px solid #4a5670;border-radius:10px;font:11px ${FONT};padding:10px 3px;width:100%`, btns, txt);
     bt.addEventListener("click", e => { e.stopPropagation(); fn(bt); });
     return bt;
+  };
+  const paintToggle = (bt, label, on) => {
+    bt.textContent = label + (on ? " ✓" : " ✗");
+    bt.style.borderColor = on ? GREEN : "#4a5670";
+    bt.style.color = on ? GREEN : "#fff";
   };
 
   let sndBtn = null, headTxt = "";
 
   function setupButtons(actions) {
+    mkSec("Pruebas");
     mk("🔽 Probar baja", () => actions.doTrade("LOWER", true));
     mk("🔼 Probar sube", () => actions.doTrade("HIGHER", true));
     mk("🔔 Probar sonido", () => { unlockAudio(); playSound("HIGHER"); });
-    sndBtn = mk("🔊 Sonido " + (CFG.sound ? "✓" : "✗"), () => {
+    sndBtn = mk("", () => {
       CFG.sound = !CFG.sound;
       ui.sound = CFG.sound;
       saveCal("iqtri_ui", ui);
-      if (sndBtn) sndBtn.textContent = "🔊 Sonido " + (CFG.sound ? "✓" : "✗");
+      paintToggle(sndBtn, "🔊 Sonido", CFG.sound);
       if (CFG.sound) { unlockAudio(); playSound("HIGHER"); }
       actions.setLastEvent(CFG.sound ? "sonido activado" : "sonido desactivado");
     });
-    mk("⬇ Exportar CSV", () => jExport(actions.setLastEvent));
+    paintToggle(sndBtn, "🔊 Sonido", CFG.sound);
+
+    mkSec("Opciones");
+    const zb = mk("", bt => { CFG.zoneVary = !CFG.zoneVary; paintToggle(bt, "🎯 Zonas", CFG.zoneVary); });
+    paintToggle(zb, "🎯 Zonas", CFG.zoneVary);
+    const pb = mk("", bt => { CFG.usePatterns = !CFG.usePatterns; paintToggle(bt, "🧩 Patrones", CFG.usePatterns); });
+    paintToggle(pb, "🧩 Patrones", CFG.usePatterns);
+
+    mkSec("Calibración y datos");
     mk("🎨 Cal ▲", () => { vision.setCalMode("U"); actions.setLastEvent("toca un tramo que SUBE"); });
     mk("🎨 Cal ▼", () => { vision.setCalMode("D"); actions.setLastEvent("toca un tramo que BAJA"); });
     mk("🧹 Borrar cal", () => { vision.clearCal(); vision.setCalMode(null); actions.setLastEvent("calibración borrada"); });
+    mk("⬇ Exportar CSV", () => jExport(actions.setLastEvent));
     mk("🗑 Reiniciar RL", () => { brain.resetRL(); actions.setLastEvent("RL: aprendizaje borrado"); });
-    mk("🎯 Zonas " + (CFG.zoneVary ? "✓" : "✗"), bt => { CFG.zoneVary = !CFG.zoneVary; bt.textContent = "🎯 Zonas " + (CFG.zoneVary ? "✓" : "✗"); });
-    mk("🧩 Patrones " + (CFG.usePatterns ? "✓" : "✗"), bt => { CFG.usePatterns = !CFG.usePatterns; bt.textContent = "🧩 Patrones " + (CFG.usePatterns ? "✓" : "✗"); });
     setTab(ui.tab >= 0 && ui.tab < 4 ? ui.tab : 0);
   }
 
   function fitBody() {
-    const h = window.innerHeight - box.offsetTop - head.offsetHeight - 14;
-    body.style.maxHeight = Math.max(160, h) + "px";
+    // Nunca llega a los botones Baja/Sube (≈70% de la pantalla) ni al borde inferior
+    const room = window.innerHeight - box.offsetTop - head.offsetHeight - 14;
+    const safe = window.innerHeight * 0.70 - box.offsetTop - head.offsetHeight;
+    body.style.maxHeight = Math.max(160, Math.min(room, safe)) + "px";
   }
   window.addEventListener("resize", fitBody);
 
@@ -177,6 +231,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   attach();
   document.addEventListener("DOMContentLoaded", attach);
 
+  // ---------- Gráficas ----------
   function drawBars(S, bars, curBar) {
     const g = cvBars.getContext("2d"), W = cvBars.width, H = cvBars.height;
     g.clearRect(0, 0, W, H);
@@ -224,14 +279,35 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     g.stroke(); g.lineWidth = 1;
   }
 
+  // ---------- Cabecera compacta ----------
   function paintHeader(demo, o, zzHead, tradeCount, lastTradeShort, rlTagStr, lastSay) {
     try {
-      const lock = o.length ? ` 🔒${o[0].dir === "HIGHER" ? "▲" : "▼"}${o.length}` : "";
-      const t = `${zzHead}  ${demo ? "DEMO" : "REAL"}${lock}\n#${tradeCount} ${lastTradeShort || "sin entradas"}${rlTagStr}${lastSay ? "\n💬 " + lastSay.slice(0, 40) : ""}`;
-      if (t !== headTxt) { headTxt = t; head.textContent = t; }
-      head.style.color = demo ? "#0f0" : "#f55";
+      const P = "display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;white-space:nowrap;";
+      const zz = /▲/.test(zzHead) ? GREEN : /▼/.test(zzHead) ? RED : "#9ab";
+      const lock = o.length
+        ? `<span style="${P}background:#3a2f12;color:${AMBER}">🔒${o[0].dir === "HIGHER" ? "▲" : "▼"}${o.length > 1 ? "×" + o.length : ""}</span>` : "";
+      const html =
+        `<div style="display:flex;gap:4px;align-items:center">` +
+        `<span style="${P}background:${demo ? "#12351f" : "#4a1616"};color:${demo ? GREEN : RED};font-weight:bold">${demo ? "DEMO" : "REAL"}</span>` +
+        `<span style="${P}background:#141c2a;color:${zz}">${esc(zzHead)}</span>${lock}</div>` +
+        `<div style="margin-top:3px;color:#9ab;${ELL};max-width:250px">#${tradeCount} ${esc(lastTradeShort || "sin entradas")}` +
+        `<span style="color:#cfe">${esc(rlTagStr)}</span></div>`;
+      if (html !== headTxt) { headTxt = html; head.innerHTML = html; }
     } catch (e) {}
   }
+
+  // ---------- Dashboard ----------
+  function statusOf(d, rl, p) {
+    if (!CFG.rl) return { ic: "⚪", t: "Aprendizaje apagado", c: "#9ab", bg: "#1b2433" };
+    if (p == null) return { ic: "🔴", t: "Sin precio todavía", c: RED, bg: "#3a1a1a" };
+    if (d.isPaused) return { ic: "⏸", t: "En pausa: tocaste la pantalla", c: AMBER, bg: "#3a2f12" };
+    if (rl.total < CFG.rlWarmup) return { ic: "🟡", t: `Aprendiendo ${rl.total}/${CFG.rlWarmup}`, c: AMBER, bg: "#3a2f12", pct: rl.total / CFG.rlWarmup };
+    return { ic: "🟢", t: "Filtrando con lo aprendido", c: GREEN, bg: "#12351f" };
+  }
+  const statusHtml = s => `<div style="background:${s.bg};border-radius:10px;padding:7px 10px">` +
+    `<div style="color:${s.c};font-weight:bold;font-size:12px">${s.ic} ${esc(s.t)}</div>` +
+    (s.pct != null ? `<div style="height:4px;background:#0b111b;border-radius:3px;margin-top:5px"><div style="width:${(s.pct * 100).toFixed(0)}%;height:100%;background:${s.c};border-radius:3px"></div></div>` : "") +
+    `</div>`;
 
   function initDashboard(getCtxData) {
     renderFn = () => {
@@ -241,83 +317,105 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         const { S, bars, curBar, cdlNow } = brain.getState();
         const { wsMsgs, wsQ, priceSrc } = vision.getWsStats();
         const tab = ui.tab || 0, b = d.be, p = d.curPrice, x = d.execStats;
+        const st = statusOf(d, rl, p);
+        const trendTxt = S.trend === "U" ? "▲ Alcista" : S.trend === "D" ? "▼ Bajista" : "↔ Lateral";
+        const trendCol = S.trend === "U" ? GREEN : S.trend === "D" ? RED : AMBER;
 
         if (tab === 0) {
-          const card = (v, l, c) => `<div style="background:#141c2a;border-radius:8px;padding:4px 2px;text-align:center">` +
-            `<div style="font-size:13px;font-weight:bold;color:${c}">${v}</div><div style="color:#8aa;font-size:9px;margin-top:1px">${l}</div></div>`;
-          chips.innerHTML =
-            card(x.win == null ? "–" : (x.win * 100).toFixed(0) + "%", `Aciertos bot (${x.n})`, x.win == null ? "#cfe" : x.win > b ? GREEN : RED) +
-            card((rl.pl >= 0 ? "+" : "") + rl.pl.toFixed(2), "Ganancia", rl.pl >= 0 ? GREEN : RED) +
-            card(String(rl.total), rl.total < CFG.rlWarmup ? "Eval /" + CFG.rlWarmup : "Evaluadas", "#cfe") +
-            card(rl.usr && rl.usr.n ? `${Math.round(100 * rl.usr.w / rl.usr.n)}%` : "0%", `Tus manuales (${rl.usr ? rl.usr.n : 0})`, rl.usr && rl.usr.n && (rl.usr.w / rl.usr.n) > b ? GREEN : AMBER) +
-            card(p == null ? "—" : String(p), p == null ? "Sin precio" : "Precio (" + priceSrc + ")", p == null ? RED : "#cfe") +
-            card(S.trend === "U" ? "▲ Alcista" : S.trend === "D" ? "▼ Bajista" : "↔ Lateral", "Tendencia", S.trend === "U" ? GREEN : S.trend === "D" ? RED : AMBER);
+          stBar.innerHTML = statusHtml(st);
 
-          const o = d.openTrades, now = Date.now();
-          let st;
-          if (!CFG.rl) st = "⚪ Aprendizaje apagado";
-          else if (p == null) st = `🔴 Sin precio: esperando datos (ws ${wsMsgs}/${wsQ})`;
-          else if (d.isPaused) st = "⏸ En pausa: tocaste la pantalla";
-          else if (rl.total < CFG.rlWarmup) st = `🟡 Aprendiendo (${rl.total}/${CFG.rlWarmup}). Opera normal mientras reúne datos`;
-          else st = "🟢 Filtrando entradas con lo aprendido";
-          const ver = (x.win != null && x.n >= 10) ? (x.win > b ? "<br>👍 Bot por encima del mínimo" : "<br>⚠️ Bot por debajo del mínimo") : "";
-          const usrStat = rl.usr && rl.usr.n ? `<br>👤 Tus clics: ${rl.usr.n} operadas (✅${rl.usr.w} ❌${rl.usr.l})` : "<br>👤 Tus clics: Ninguna registrada todavía (haz clics manuales para entrenar al bot).";
-          const op = o.length ? "<br>🔒 Abiertas: " + o.map(t => `${t.dir === "HIGHER" ? "▲" : "▼"}${Math.max(0, Math.ceil((t.until - now) / 1000))}s`).join(" ") : "";
-          banner.innerHTML = st + usrStat + ver + op + (d.lastEvent ? `<br><span style="color:#8aa">Último: ${esc(d.lastEvent)}</span>` : "");
+          kpis.innerHTML =
+            kpi(x.win == null ? "–" : (x.win * 100).toFixed(0) + "%", `Aciertos (${x.n})`, x.win == null ? "#cfe" : x.win > b ? GREEN : RED) +
+            kpi((rl.pl >= 0 ? "+" : "") + rl.pl.toFixed(2), "Ganancia", rl.pl >= 0 ? GREEN : RED) +
+            kpi(String(rl.total), "Evaluadas", "#cfe") +
+            kpi(rl.usr && rl.usr.n ? Math.round(100 * rl.usr.w / rl.usr.n) + "%" : "–", `Tuyas (${rl.usr ? rl.usr.n : 0})`,
+              rl.usr && rl.usr.n && (rl.usr.w / rl.usr.n) > b ? GREEN : AMBER);
+
+          mkt.innerHTML =
+            `<div style="display:flex;align-items:baseline;justify-content:space-between">` +
+            `<b style="font-size:18px;color:#fff">${p == null ? "—" : p.toFixed(5)}</b>` +
+            `<span style="color:${GREY};font-size:9px">${p == null ? "sin precio" : esc(priceSrc)}</span></div>` +
+            `<div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap">` +
+            chip(trendTxt, trendCol) + chip("Zona " + POSN2[S.pos], "#9ab") +
+            (S.pat !== "NONE" ? chip(`${pGlyph(S.pat)} ${esc(PATN[S.pat] || S.pat)}`, pCol(S.pat)) : "") + `</div>`;
+
+          // Medidor de confluencia de acción del precio
+          const bias = S.bias || 0, bc = Math.max(-4, Math.min(4, bias));
+          const mcol = bias >= 2 ? GREEN : bias <= -2 ? RED : AMBER;
+          const mtxt = bias >= 2 ? "Alcista" : bias <= -2 ? "Bajista" : "Neutral";
+          const left = bc >= 0 ? 50 : 50 + bc / 4 * 50, wid = Math.abs(bc) / 4 * 50;
+          let cd = 0;
+          for (const nm of cdlNow.names) if (nm !== "DOJI" && PAT_DIR[nm]) cd += PAT_DIR[nm] === "HIGHER" ? 1 : -1;
+          const dot = (ic, lb, v) => `<div style="text-align:center;min-width:0"><div style="width:26px;height:26px;margin:0 auto;border-radius:50%;` +
+            `background:${v > 0 ? "#12351f" : v < 0 ? "#3a1a1a" : "#1b2433"};border:1px solid ${v > 0 ? GREEN : v < 0 ? RED : "#34425a"};` +
+            `display:flex;align-items:center;justify-content:center;font-size:13px">${ic}</div>` +
+            `<div style="color:${GREY};font-size:9px;margin-top:2px">${lb}</div></div>`;
+          const patV = S.pat !== "NONE" && PAT_DIR[S.pat] ? (PAT_DIR[S.pat] === "HIGHER" ? 1 : -1) : 0;
+          meter.innerHTML =
+            `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">` +
+            `<span style="color:#9ab;font-size:11px">🧭 Acción del precio</span>` +
+            `<b style="color:${mcol}">${mtxt} ${bias > 0 ? "+" : ""}${bias}</b></div>` +
+            `<div style="position:relative;height:8px;background:#0b111b;border-radius:4px">` +
+            `<div style="position:absolute;left:${left}%;width:${wid}%;top:0;bottom:0;background:${mcol};border-radius:4px"></div>` +
+            `<div style="position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:#fff"></div></div>` +
+            `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:2px;margin-top:8px">` +
+            dot("📐", "Tend.", S.trend === "U" ? 1 : S.trend === "D" ? -1 : 0) +
+            dot("🧱", "Nivel", S.lvl === "S" ? 1 : S.lvl === "R" ? -1 : 0) +
+            dot("⚡", "Moment.", S.mom || 0) +
+            dot("🕯", "Velas", cd > 0 ? 1 : cd < 0 ? -1 : 0) +
+            dot("🧩", "Patrón", patV) + `</div>`;
 
           drawBars(S, bars, curBar);
-          barsNote.innerHTML = (bars.length < 7 ? "Reuniendo barras para analizar…" :
-            `Tendencia ${TRN2[S.trend]}, precio en zona ${POSN2[S.pos]}. ` +
-            (S.pat !== "NONE" ? `Patrón: <b>${PATN[S.pat]}</b> (${dirWord(PAT_DIR[S.pat])}).` : "Sin patrón activo.")) +
-            "<br>🟧 máx · 🟦 mín";
           drawPL(rl.hist);
+          plVal.textContent = (rl.pl >= 0 ? "+" : "") + rl.pl.toFixed(2);
+          plVal.style.color = rl.pl >= 0 ? GREEN : RED;
 
           const m = Math.round((Date.now() - d.sess.t0) / 60000), dec = d.sess.win + d.sess.loss;
-          let h = `Hace ${m} min: <b>${d.sess.signals}</b> señales vistas y <b>${d.sess.trades}</b> entradas bot` +
-            (dec ? ` (✅ ${d.sess.win} · ❌ ${d.sess.loss} · ${Math.round(100 * d.sess.win / dec)}%)` : "") + ".";
-          if (rl.usr && rl.usr.n) {
-            const usWin = Math.round(100 * rl.usr.w / rl.usr.n);
-            h += `<br>👤 <b>Tus operaciones manuales:</b> ${rl.usr.n} (✅ ${rl.usr.w} · ❌ ${rl.usr.l} · ${usWin}%). El bot aprende activamente de ellas.`;
-          } else {
-            h += `<br>👤 <b>Tus operaciones manuales:</b> Ninguna registrada aún. Haz clics manuales para que el bot aprenda de ti.`;
-          }
+          let h = `⏱ ${m} min · <b>${d.sess.signals}</b> señales · <b>${d.sess.trades}</b> entradas` +
+            (dec ? `<br>✅ ${d.sess.win} · ❌ ${d.sess.loss} · ${Math.round(100 * d.sess.win / dec)}%` : "");
+          if (rl.usr && rl.usr.n) h += `<br>👤 Tuyas: ${rl.usr.n} (✅ ${rl.usr.w} · ❌ ${rl.usr.l})`;
           const ks = Object.keys(d.sess.bySrc);
-          if (ks.length) h += "<br>Por origen (ganadas/total): " + ks.map(k => `${k} ${d.sess.bySrc[k].w}/${d.sess.bySrc[k].n}`).join(" · ");
-          h += `<br>Omitidas: ${d.sess.skipRL} por lo aprendido, ${d.sess.skipOpp} por sentido contrario, ${d.sess.skipPause} por tocar la pantalla.`;
-          const top = Object.keys(rl.seen).sort((a, c) => rl.seen[c] - rl.seen[a]).slice(0, 3);
-          if (top.length) h += "<br>Más frecuentes: " + top.map(k => `${PATN[k] || k} ×${rl.seen[k]}`).join(", ") + ".";
+          if (ks.length) h += "<br>" + ks.map(k => `${k} ${d.sess.bySrc[k].w}/${d.sess.bySrc[k].n}`).join(" · ");
+          h += `<br><span style="color:${GREY}">Omitidas: ${d.sess.skipRL} aprendido · ${d.sess.skipOpp} sentido · ${d.sess.skipPause} pausa</span>`;
           sumBox.innerHTML = h;
-          stat.textContent = d.fullText + "\n" + (d.rlLast ? d.rlLast + "\n" : "");
+          stat.textContent = d.fullText + "\n" + (d.rlLast ? d.rlLast + "\n" : "") + `ws ${wsMsgs}/${wsQ}`;
 
         } else if (tab === 1) {
-          const L = [];
-          if (p == null) L.push("🔴 Sin precio: esperando datos del mercado.");
-          else {
-            L.push(`💹 Precio <b>${p.toFixed(5)}</b>` + (curBar && S.atr ? ` · vela actual ${curBar.c >= curBar.o ? "verde" : "roja"} (${(Math.abs(curBar.c - curBar.o) / S.atr).toFixed(1)}× el rango medio)` : ""));
-            if (bars.length < 7) L.push(`⏳ Reuniendo barras (${bars.length}/7) para analizar la estructura.`);
-            else {
-              L.push(`📐 Tendencia <b>${TRN2[S.trend]}</b>, precio en zona ${POSN2[S.pos]} del rango.`);
-              L.push(S.pat !== "NONE" ? `🧩 Patrón activo: <b>${PATN[S.pat]}</b> → sugiere ${dirWord(PAT_DIR[S.pat])}.` : "🧩 Sin patrón de acción de precio activo.");
-              L.push(cdlNow.names.length ? `🕯 Última vela (${cdlNow.color}): <b>${cdlNow.names.map(n => PATN[n]).join(" + ")}</b>.` : `🕯 Última vela ${cdlNow.color || "–"}: sin patrón.`);
-            }
-            L.push("🔀 " + esc(d.crossInfo));
-            const o = d.openTrades, now = Date.now();
-            L.push(o.length ? "🔒 Operación abierta: " + o.map(t => `${t.dir === "HIGHER" ? "▲" : "▼"} ${Math.max(0, Math.ceil((t.until - now) / 1000))}s`).join(" ") : "🎯 Sin operación abierta: esperando señal.");
-            L.push(!CFG.rl ? "⚪ Aprendizaje apagado." : rl.total < CFG.rlWarmup ? `🟡 Aprendiendo (${rl.total}/${CFG.rlWarmup}): opera sin filtro.` : "🟢 Filtrando entradas con lo aprendido.");
-          }
-          nowBox.innerHTML = L.join("<br>");
+          nowStatus.innerHTML = statusHtml(st);
 
-          if (!d.lastWhy) whyBox.innerHTML = `<span style="color:#789">Aún no ha entrado ninguna operación.</span>`;
-          else {
+          const o = d.openTrades, now = Date.now();
+          const zzM = /(▲|▼)/.exec(d.crossInfo || ""), zzD = /→\s*(HIGHER|LOWER)/.exec(d.crossInfo || "");
+          nowGrid.innerHTML =
+            tile("💹", p == null ? "—" : p.toFixed(5), curBar && S.atr ? `vela ${curBar.c >= curBar.o ? "verde" : "roja"}` : "precio", curBar && curBar.c >= curBar.o ? GREEN : RED) +
+            tile("📐", trendTxt, "Zona " + POSN2[S.pos], trendCol) +
+            tile("🧩", S.pat !== "NONE" ? esc(PATN[S.pat] || S.pat) : "—", "patrón", S.pat !== "NONE" ? pCol(S.pat) : GREY) +
+            tile("🕯", cdlNow.names.length ? cdlNow.names.map(n => esc(PATN[n] || n)).join("+") : "—", "última vela", cdlNow.names.length ? "#cfe" : GREY) +
+            tile("🔀", zzM ? zzM[1] : "—", zzD ? "señal " + dirWord(zzD[1]) : "zigzag", zzM ? (zzM[1] === "▲" ? GREEN : RED) : GREY) +
+            tile("🎯", o.length ? o.map(t => `${t.dir === "HIGHER" ? "▲" : "▼"}${Math.max(0, Math.ceil((t.until - now) / 1000))}s`).join(" ") : "Libre", o.length ? "abierta" : "esperando", o.length ? AMBER : GREY);
+
+          if (!d.lastWhy) {
+            whyHead.innerHTML = `<span style="color:#789">Aún no ha entrado ninguna operación.</span>`;
+            whyDet.style.display = "none";
+          } else {
             const w = d.lastWhy, r = w.result;
-            whyBox.innerHTML = `<b>${w.dir === "HIGHER" ? "▲" : "▼"} ${esc(w.title)}</b> <span style="color:#8aa">${hhmmss(w.t)}</span><br>` +
-              w.lines.map(l => "• " + esc(l)).join("<br>") +
-              (r ? `<br>${r.icon} <b>${esc(r.text)}</b>` : "<br>⏳ esperando el resultado…");
+            const wc = w.dir === "HIGHER" ? GREEN : RED;
+            whyHead.innerHTML = `<div style="display:flex;align-items:center;gap:6px">` +
+              `<b style="color:${wc};font-size:13px">${w.dir === "HIGHER" ? "▲ SUBE" : "▼ BAJA"}</b>` +
+              `<span style="flex:1;color:#9ab;font-size:10px;${ELL}">${esc(w.title.replace(/^(SUBE|BAJA) por /, ""))}</span>` +
+              `<span style="color:#789;font-size:9px">${hhmmss(w.t).slice(3)}</span>` +
+              `<span style="font-size:15px">${r ? r.icon : "⏳"}</span></div>`;
+            whyDet.style.display = "block";
+            whyBody.innerHTML = w.lines.map(l => "• " + esc(l)).join("<br>") + (r ? `<br><b>${esc(r.text)}</b>` : "");
           }
 
-          feed.innerHTML = d.story.length ? d.story.slice(0, 25).map(e =>
-            `<div style="margin:3px 0"><span style="color:#789">${hhmmss(e.t)}</span> ${e.icon} ${esc(e.text)}</div>`).join("")
-            : `<div style="color:#789">Sin eventos todavía…</div>`;
+          const fh = d.story.length ? d.story.slice(0, 10).map(e => {
+            const open = expanded.has(String(e.t));
+            return `<div data-t="${e.t}" style="display:flex;gap:6px;align-items:${open ? "flex-start" : "center"};padding:6px 7px;margin:2px 0;background:#111a27;border-radius:8px;font-size:11px">` +
+              `<span style="flex:none;font-size:13px">${e.icon}</span>` +
+              `<span style="flex:1;min-width:0;${open ? "white-space:normal;line-height:1.4" : ELL}">${esc(e.text)}</span>` +
+              `<span style="flex:none;color:#789;font-size:9px">${hhmmss(e.t).slice(3)}</span></div>`;
+          }).join("") : `<div style="color:#789">Sin eventos todavía…</div>`;
+          if (fh !== feedHtml) { feedHtml = fh; feed.innerHTML = fh; }
 
         } else if (tab === 2) {
           // --- Patrones vistos: cuadrícula de iconos con contador ---
@@ -327,7 +425,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
             ? sk.map(k => {
               const on = ui.sel === k;
               return `<div data-k="${k}" style="display:flex;align-items:center;justify-content:center;gap:3px;background:${on ? "#2a3a58" : "#141c2a"};` +
-                `border:1px solid ${on ? "#5a7aa8" : "#29364a"};border-radius:6px;padding:4px 0;white-space:nowrap">` +
+                `border:1px solid ${on ? "#5a7aa8" : "#29364a"};border-radius:8px;padding:6px 0;white-space:nowrap">` +
                 `<span style="font-size:13px;color:${pCol(k)};line-height:1">${pGlyph(k)}</span>` +
                 `<b style="font-size:10px;color:#cfe">${rl.seen[k]}</b></div>`;
             }).join("")
@@ -338,12 +436,12 @@ window.PLEX_MOD = window.PLEX_MOD || {};
           const ih = sel
             ? `<span style="color:${pCol(sel)};font-size:13px">${pGlyph(sel)}</span> <b style="color:#cfe">${esc(PATN[sel] || sel)}</b> ×${rl.seen[sel]}` +
               (PAT_DIR[sel] ? ` → ${dirWord(PAT_DIR[sel])}` : "") + (PATD[sel] ? `<br>${esc(PATD[sel])}` : "")
-            : "👆 Toca un icono para ver su nombre y qué significa";
+            : "👆 Toca un icono para ver qué significa";
           if (ih !== seenInfoHtml) { seenInfoHtml = ih; seenInfo.innerHTML = ih; }
 
           // --- Rendimiento: una fila por contexto ---
           const rows = Object.keys(rl.Q).filter(k => k.split("|").length >= 2 && rl.Q[k].N > 0)
-            .sort((a, c) => rl.Q[c].N - rl.Q[a].N).slice(0, 14);
+            .sort((a, c) => rl.Q[c].N - rl.Q[a].N).slice(0, 10);
           const th = rows.length ? rows.map(k => {
             const parts = k.split("|"), sc = parts[0], pt = parts[1], e = rl.Q[k], w = e.W / e.N;
             let col, icon;
@@ -353,10 +451,10 @@ window.PLEX_MOD = window.PLEX_MOD || {};
             else if (1 - w > b) { col = AMBER; icon = "🔄"; }
             else { col = RED; icon = "⛔"; }
             const pc = pCol(pt), nm = PATN[pt] || pt;
-            return `<div style="display:flex;align-items:center;gap:5px;background:#111a27;border:1px solid #253247;border-radius:6px;padding:4px 6px;margin:2px 0;font-size:10px">` +
+            return `<div style="display:flex;align-items:center;gap:5px;background:#111a27;border:1px solid #253247;border-radius:8px;padding:6px 7px;margin:2px 0;font-size:10px">` +
               `<span style="flex:none">${icon}</span>` +
               `<span style="flex:none" title="${esc(SRCN[sc] || sc)}">${SRC_ICON[sc] || esc(sc)}</span>` +
-              `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="color:${pc}">${pGlyph(pt)}</span> ${esc(nm)}</span>` +
+              `<span style="flex:1;min-width:0;${ELL}"><span style="color:${pc}">${pGlyph(pt)}</span> ${esc(nm)}</span>` +
               `<div style="position:relative;flex:none;width:36px;height:4px;background:#1b2433;border-radius:3px"><div style="width:${(w * 100).toFixed(0)}%;height:100%;background:${col};border-radius:3px"></div>` +
               `<div style="position:absolute;left:${(b * 100).toFixed(1)}%;top:-2px;width:1px;height:8px;background:#fff"></div></div>` +
               `<b style="flex:none;width:26px;text-align:right;color:${col}">${(w * 100).toFixed(0)}%</b>` +
