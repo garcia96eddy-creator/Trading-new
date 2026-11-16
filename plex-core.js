@@ -1,9 +1,13 @@
 
-// PLEX v5.6 - Módulo 5: Motor de Ejecución + Gestión de Monto Adaptativo
+// PLEX v6.2 - Motor de Ejecución + Gestión de Riesgo
 window.PLEX_MOD = window.PLEX_MOD || {};
 
 (() => {
-  const { CFG, WORDS, PAT_DIR, PATN, PATD, TRN2, POSN2, loadCal, saveCal, dirWord, opposite, entryAlert } = window.PLEX_MOD.config;
+  const {
+    CFG, WORDS, PAT_DIR, PATN, PATD, TRN2, POSN2,
+    loadCal, saveCal, dirWord, opposite, entryAlert
+  } = window.PLEX_MOD.config;
+
   const vision = window.PLEX_MOD.vision;
   const brain = window.PLEX_MOD.brain;
   const ui = window.PLEX_MOD.ui;
@@ -12,6 +16,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   let crossInfo = "", zzHead = "ZZ –", lastTradeShort = "", fullText = "", rlLast = "";
 
   let openTrades = (loadCal("iqtri_open") || []).filter(o => o && o.until > Date.now());
+
   const pruneOpen = () => {
     const now = Date.now(), n = openTrades.length;
     openTrades = openTrades.filter(o => o.until > now);
@@ -21,25 +26,43 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   const story = [], sayKeys = {};
   let lastSay = "", lastWhy = null;
-  const sess = { t0: Date.now(), signals: 0, trades: 0, win: 0, loss: 0, skipRL: 0, skipOpp: 0, skipPause: 0, bySrc: {} };
+
+  const sess = {
+    t0: Date.now(), signals: 0, trades: 0, win: 0, loss: 0,
+    skipRL: 0, skipOpp: 0, skipPause: 0, bySrc: {}
+  };
 
   function say(icon, text, key) {
     const now = Date.now(), k = key || text;
     if (sayKeys[k] && now - sayKeys[k] < 4000) return;
+
     sayKeys[k] = now;
-    if (Object.keys(sayKeys).length > 300) for (const x in sayKeys) if (now - sayKeys[x] > 10000) delete sayKeys[x];
+    if (Object.keys(sayKeys).length > 300) {
+      for (const x in sayKeys) {
+        if (now - sayKeys[x] > 10000) delete sayKeys[x];
+      }
+    }
+
     story.unshift({ t: now, icon, text });
     if (story.length > CFG.storyMax) story.pop();
     lastSay = icon + " " + text;
   }
 
   let lastP = null, lastPAt = 0, pxAt = 0;
-  const curPrice = () => (lastP != null && performance.now() - lastPAt < CFG.priceStaleMs ? lastP : null);
+
+  const curPrice = () =>
+    lastP != null && performance.now() - lastPAt < CFG.priceStaleMs
+      ? lastP
+      : null;
 
   let Zs = loadCal("iqtri_zones");
-  if (!Array.isArray(Zs) || Zs.length !== 9) Zs = Array.from({ length: 9 }, () => ({ n: 0, ok: 0, ms: 0 }));
+
+  if (!Array.isArray(Zs) || Zs.length !== 9) {
+    Zs = Array.from({ length: 9 }, () => ({ n: 0, ok: 0, ms: 0 }));
+  }
 
   let lastTouch = -1e9;
+
   ["pointerdown", "pointermove", "pointerup", "touchstart", "touchmove", "touchend", "mousedown", "wheel"].forEach(ev =>
     document.addEventListener(ev, e => {
       if (!e.isTrusted) return;
@@ -48,7 +71,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       lastTouch = performance.now();
     }, { capture: true, passive: true })
   );
-  const isPaused = () => CFG.touchPauseMs > 0 && performance.now() - lastTouch < CFG.touchPauseMs;
+
+  const isPaused = () =>
+    CFG.touchPauseMs > 0 && performance.now() - lastTouch < CFG.touchPauseMs;
 
   document.addEventListener("pointerup", e => {
     if (!vision.getCalMode() || ui.box.contains(e.target)) return;
@@ -56,55 +81,78 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   }, true);
 
   let demoAt = 0, demoVal = false;
+
   const isDemo = () => {
     const now = Date.now();
+
     if (now - demoAt > 3000 && document.body) {
       demoVal = /demo account|cuenta demo|cuenta de práctica/i.test(document.body.innerText);
       demoAt = now;
     }
+
     return demoVal;
   };
 
   let payoutVal = 0, payoutAt = 0;
+
   const payoutNow = () => {
     const now = Date.now();
+
     if (now - payoutAt > 5000 && document.body) {
       payoutAt = now;
       const m = document.body.innerText.match(/Rendim[\s\S]{0,40}?\+\s*(\d{1,3})\s*%/i);
       if (m) payoutVal = +m[1] / 100;
     }
+
     return payoutVal || CFG.payout;
   };
 
   let expAt = 0, expVal = 0;
+
   const expiryBase = () => {
     const now = Date.now();
+
     if (now - expAt > 2000 && document.body) {
       expAt = now;
       const m = document.body.innerText.match(/Tiempo[\s\S]{0,8}?(\d+)\s*(min|m|s)\b/i);
-      if (m) { const n = +m[1]; expVal = /^s/i.test(m[2]) ? n * 1000 : n * 60000; }
+
+      if (m) {
+        const n = +m[1];
+        expVal = /^s/i.test(m[2]) ? n * 1000 : n * 60000;
+      }
     }
+
     return expVal || CFG.tradeSecs * 1000;
   };
+
   const expiryMs = () => expiryBase() + CFG.holdMarginMs;
 
   // =========================================================
-  // GESTIÓN ADAPTATIVA DEL CAPITAL
-  // Base: 1% del saldo.
-  // Máximo: 2% del saldo.
-  // Solo escala con al menos 30 resultados del contexto.
+  // GESTIÓN DE RIESGO
+  // El porcentaje máximo se toma de CFG.stakeMaxPct.
+  // No se permite superar el límite configurado.
   // =========================================================
 
-  const STAKE_BASE_PCT = 0.01;
-  const STAKE_MAX_PCT = 0.02;
-  const STAKE_MIN_SAMPLES = 30;
+  const STAKE_BASE_PCT = Math.max(
+    0,
+    Math.min(0.01, Number(CFG.stakeBasePct) || 0.01)
+  );
+
+  const STAKE_MAX_PCT = Math.max(
+    0,
+    Math.min(STAKE_BASE_PCT, Number(CFG.stakeMaxPct) || STAKE_BASE_PCT)
+  );
+
+  const STAKE_MIN_SAMPLES = Math.max(1, Number(CFG.strategyMinSamples) || 30);
   const STAKE_SCALE_START = 0.60;
   const STAKE_SCALE_FULL = 0.70;
 
   function readBalance() {
     if (!document.body) return null;
 
-    const m = (document.body.innerText || "").match(/\$\s*([\d,]+(?:\.\d{1,2})?)/);
+    const text = document.body.innerText || "";
+    const m = text.match(/\$\s*([\d,]+(?:\.\d{1,2})?)/);
+
     if (!m) return null;
 
     const v = Number(m[1].replace(/,/g, ""));
@@ -120,27 +168,33 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     if (
       samples >= STAKE_MIN_SAMPLES &&
       Number.isFinite(prob) &&
-      prob > STAKE_SCALE_START
+      prob > STAKE_SCALE_START &&
+      STAKE_MAX_PCT > STAKE_BASE_PCT
     ) {
-      const progress = Math.min(
-        1,
-        (prob - STAKE_SCALE_START) /
-        (STAKE_SCALE_FULL - STAKE_SCALE_START)
+      const progress = Math.max(
+        0,
+        Math.min(
+          1,
+          (prob - STAKE_SCALE_START) /
+          (STAKE_SCALE_FULL - STAKE_SCALE_START)
+        )
       );
 
       pct = STAKE_BASE_PCT +
         progress * (STAKE_MAX_PCT - STAKE_BASE_PCT);
     }
 
+    // Protección adicional: nunca superar el máximo configurado.
+    pct = Math.min(pct, STAKE_MAX_PCT);
+
     const raw = balance * pct;
 
-    // Si el 1% no alcanza el mínimo de $1, no exceder el riesgo.
+    // No aumentar el riesgo para alcanzar el mínimo de la plataforma.
     if (raw < 1) return null;
 
     return Math.min(balance, Math.round(raw * 100) / 100);
   }
 
-  // Ajusta el campo de cantidad de IQ Option y verifica el resultado.
   function setTradeAmount(amount) {
     if (!Number.isFinite(amount) || amount <= 0) return false;
 
@@ -198,7 +252,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     const rl = brain.getRL();
     const dec = rl.hist.filter(r => r !== 0);
     const w = dec.filter(r => r > 0).length;
-    return { n: dec.length, win: dec.length ? w / dec.length : null };
+
+    return {
+      n: dec.length,
+      win: dec.length ? w / dec.length : null
+    };
   };
 
   function rlTag() {
@@ -215,14 +273,21 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   }
 
   function paint() {
-    ui.paintHeader(isDemo(), pruneOpen(), zzHead, tradeCount, lastTradeShort, rlTag(), lastSay);
+    ui.paintHeader(
+      isDemo(), pruneOpen(), zzHead,
+      tradeCount, lastTradeShort, rlTag(), lastSay
+    );
   }
 
-  const show = t => { fullText = t; paint(); };
+  const show = t => {
+    fullText = t;
+    paint();
+  };
 
   function bgColor(e) {
     const m = (getComputedStyle(e).backgroundColor || "").match(/\d+(\.\d+)?/g);
     if (!m || m.length < 3) return null;
+
     const a = m.length > 3 ? parseFloat(m[3]) : 1;
     return a < 0.5 ? null : [+m[0], +m[1], +m[2]];
   }
@@ -245,6 +310,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     const boxes = [...document.querySelectorAll("button,[role=button],div")].filter(e => {
       const r = e.getBoundingClientRect();
+
       return r.width > 120 && r.width < 420 &&
         r.height > 40 && r.height < 120 &&
         r.top > window.innerHeight * 0.55 &&
@@ -268,6 +334,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         const rb = b.getBoundingClientRect();
         return ra.width * ra.height - rb.width * rb.height;
       });
+
       return hits[0];
     }
 
@@ -308,8 +375,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   function pickZone() {
     const low = [];
 
-    for (let i = 0; i < 9; i++)
+    for (let i = 0; i < 9; i++) {
       if (Zs[i].n < 3) low.push(i);
+    }
 
     if (low.length)
       return low[(Math.random() * low.length) | 0];
@@ -324,7 +392,10 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       const s = (z.ok / z.n) * 1000 -
         (z.ok ? z.ms / z.ok : 2500);
 
-      if (s > bs) { bs = s; best = i; }
+      if (s > bs) {
+        bs = s;
+        best = i;
+      }
     }
 
     return best;
@@ -375,13 +446,15 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   function doTrade(dir, force, t0, src, why, stakeAmount) {
     if (CFG.demoOnly && !isDemo()) {
-      lastEvent = "bloqueado: cuenta real";
+      lastEvent = "bloqueado: cuenta real o cuenta demo no detectada";
+      say("🔒", "Operación bloqueada: no se pudo confirmar cuenta demo", "demoblock");
       return null;
     }
 
     if (src && isPaused()) {
       lastEvent = `${src} ${dirWord(dir)} ignorada: pantalla tocada`;
       sess.skipPause++;
+
       say("⏸", `Omitida ${dirWord(dir)}: tocaste la pantalla`, "pz");
       return null;
     }
@@ -397,27 +470,36 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
       if (opp) {
         const sl = Math.max(0, Math.ceil((opp.until - now) / 1000));
+
         lastEvent = `${src} ${dirWord(dir)} ignorada: hay ${dirWord(opp.dir)} abierta (${sl}s)`;
         sess.skipOpp++;
 
-        say("⛔",
+        say(
+          "⛔",
           `Omitida ${dirWord(dir)}: ya hay una ${dirWord(opp.dir)} abierta${opp.by === "user" ? " (tuya)" : ""} (${sl}s) y solo opero en un sentido`,
-          "opp" + dir);
+          "opp" + dir
+        );
 
         return null;
       }
     }
 
     const btn = getButton(dir);
+
     if (!btn) {
       lastEvent = "no encontré botón " + dir;
       return null;
     }
 
-    // Antes de entrar, ajustar y verificar la cantidad.
     if (stakeAmount != null && !setTradeAmount(stakeAmount)) {
       lastEvent = "operación cancelada: no pude verificar el monto";
-      say("⛔", "No se abrió: no pude ajustar/verificar el monto calculado", "stakefail");
+
+      say(
+        "⛔",
+        "No se abrió: no pude ajustar/verificar el monto calculado",
+        "stakefail"
+      );
+
       return null;
     }
 
@@ -447,6 +529,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     const lat = t0 ? performance.now() - t0 : 0;
 
     lastTradeShort = `${dirWord(dir)} ${src || "TEST"} ${new Date().toLocaleTimeString([], { hour12: false })}`;
+
     lastEvent = `ENTRADA #${tradeCount} ${dir}${src ? " [" + src + "]" : ""} z${zone}` +
       (CFG.profile && t0 ? ` (${lat.toFixed(0)}ms)` : "");
 
@@ -502,7 +585,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       return null;
 
     if (ready && CFG.rlMode === "gate" &&
-        (isPat || rl.total >= CFG.rlWarmup)) {
+      (isPat || rl.total >= CFG.rlWarmup)) {
 
       let d = brain.policy(isPat ? keys.slice(0, 3) : keys);
 
@@ -537,16 +620,18 @@ window.PLEX_MOD = window.PLEX_MOD || {};
           return null;
         }
       } else if (d.a === "SKIP" ||
-          (d.a === "UNK" && CFG.rlUnknown === "skip")) {
+        (d.a === "UNK" && CFG.rlUnknown === "skip")) {
         sess.skipRL++;
         lastEvent = `RL omite ${src} ${dirWord(dir)}`;
 
-        say("⏭",
+        say(
+          "⏭",
           `Omitida ${label}: ` +
           (d.a === "SKIP"
             ? `lo aprendido no la respalda (${stat})`
             : "aún no hay datos suficientes de este contexto"),
-          "skip" + label + dir);
+          "skip" + label + dir
+        );
 
         return null;
       }
@@ -592,13 +677,13 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       ]
     };
 
-    // Calcular monto basado en el historial del contexto seleccionado.
     const stakeAmount = src
       ? stakeForProbability(learnedProb, learnedN)
       : null;
 
     if (src && stakeAmount == null) {
-      lastEvent = "operación omitida: no se pudo calcular un monto seguro del 1%";
+      lastEvent = "operación omitida: no se pudo calcular un monto seguro";
+
       say("⛔", lastEvent, "stake-unavailable");
       return null;
     }
@@ -617,7 +702,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     }
 
     const tr = doTrade(
-      fd, force, t0,
+      fd,
+      force,
+      t0,
       isPat ? "PAT:" + patName : src,
       why,
       stakeAmount
@@ -629,6 +716,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         smp.tr = tr;
         smp.why = why;
       }
+
       return fd;
     }
 
@@ -657,11 +745,13 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     saveCal("iqtri_open", openTrades);
 
-    say("👤",
+    say(
+      "👤",
       `Tú entraste ${dirWord(dir)}: tendencia ${TRN2[S.trend]}, zona ${POSN2[S.pos]}` +
       (pat !== "NONE" ? `, patrón ${PATN[pat]}` : "") +
       ". Aprendo de su resultado.",
-      "usr" + Date.now());
+      "usr" + Date.now()
+    );
   }
 
   document.addEventListener("click", e => {
@@ -669,6 +759,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     for (const d of ["HIGHER", "LOWER"]) {
       const bt = getButton(d);
+
       if (bt && bt.contains(e.target)) {
         userTrade(d);
         return;
@@ -713,26 +804,49 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     zzHead = `ZZ ${candSign === 1 ? "▲" : "▼"}→${dirWord(dir)}${candSign !== stableSign ? "…" : ""}`;
   }
 
+  // =========================================================
+  // PRECIO Y VELAS
+  // Las velas se construyen localmente con los ticks observados.
+  // No se presupone que IQ Option entregue OHLC histórico.
+  // =========================================================
+
+  let lastBarFeed = 0;
+
   function updPrice(t0) {
-    if (t0 - pxAt < 150) return;
+    if (t0 - pxAt < 100) return;
 
     pxAt = t0;
 
     const r = vision.readPrice();
-    if (!r) return;
+    if (!r || !Number.isFinite(r.p)) return;
 
-    if (vision.isAssetChanged())
+    if (vision.isAssetChanged()) {
       brain.resetMarket();
+      lastBarFeed = 0;
+    }
 
     lastP = r.p;
     lastPAt = t0;
 
-    brain.feedBar(r.p, r.hi, r.lo);
+    // Pasamos los datos disponibles sin inventar OHLC del servidor.
+    // brain.feedBar puede usar los tres primeros argumentos y,
+    // si está actualizado, el cuarto objeto con metadatos de la vela.
+    const barKey = Number.isFinite(r.barStart) ? r.barStart : 0;
+
+    if (!barKey || barKey !== lastBarFeed) {
+      brain.feedBar(r.p, r.hi, r.lo, r);
+      lastBarFeed = barKey;
+    } else {
+      // Actualiza el precio dentro de la misma vela local.
+      brain.feedBar(r.p, r.hi, r.lo, r);
+    }
   }
 
   ui.setupButtons({
     doTrade,
-    setLastEvent: txt => { lastEvent = txt; }
+    setLastEvent: txt => {
+      lastEvent = txt;
+    }
   });
 
   ui.initDashboard(() => ({
@@ -758,16 +872,21 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     if (!CFG.enabled)
       return show("PLEX: OFF");
 
+    // El precio y el análisis no dependen del aprendizaje RL.
+    updPrice(t0);
+
     if (CFG.rl) {
-      updPrice(t0);
       brain.evalPending(t0, curPrice(), payoutNow(), sess, say);
-
-      if (t0 - anAt > 250) {
-        anAt = t0;
-        fired = brain.analyze(curPrice(), say);
-      }
-
       brain.saveRLIfDirty(t0);
+    }
+
+    // El análisis se ejecuta aunque RL esté desactivado.
+    if (t0 - anAt > 250) {
+      anAt = t0;
+
+      if (typeof brain.analyze === "function") {
+        fired = brain.analyze(curPrice(), say) || [];
+      }
     }
 
     if (isPaused()) {
@@ -776,6 +895,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       candSign = 0;
       fired = [];
       zzHead = "ZZ ⏸";
+
       return show("PLEX ⏸ pausa: tocaste la pantalla");
     }
 
@@ -783,8 +903,13 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       const f = fired;
       fired = [];
 
-      for (const nm of f)
-        signal("PAT", PAT_DIR[nm], false, t0, nm);
+      for (const nm of f) {
+        const dir = PAT_DIR[nm];
+
+        if (dir === "HIGHER" || dir === "LOWER") {
+          signal("PAT", dir, false, t0, nm);
+        }
+      }
     }
 
     const img = vision.snapshot();
@@ -805,10 +930,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
       if (all.length) {
         all.forEach((t, i) => {
-          if (i === 0)
+          if (i === 0) {
             signal("TRI", t.dir, CFG.everyCross, t0);
-          else
+          } else {
             setTimeout(() => signal("TRI", t.dir, CFG.everyCross, 0), i * CFG.gapMs);
+          }
         });
       }
     }
@@ -818,9 +944,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     const dt = performance.now() - t0;
     avgMs = avgMs ? avgMs * 0.9 + dt * 0.1 : dt;
 
-    show(`PLEX ▲${up.length} ▼${down.length} · ${diag}` +
+    show(
+      `PLEX ▲${up.length} ▼${down.length} · ${diag}` +
       (CFG.useCross ? `\n${crossInfo}\n${lineStat}` : "") +
-      (CFG.profile ? `\nciclo: ${avgMs.toFixed(1)}ms` : ""));
+      (CFG.profile ? `\nciclo: ${avgMs.toFixed(1)}ms` : "")
+    );
   }
 
   (function loop() {
@@ -830,10 +958,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       tick();
     } catch (e) {
       show("PLEX error: " + e.message);
+      console.error("[PLEX core]", e);
     }
 
     setTimeout(loop, Math.max(4, CFG.intervalMs - (performance.now() - s)));
   })();
 
-  show("PLEX v5.6 Modular activo");
+  show("PLEX v6.2 Modular activo");
 })();
