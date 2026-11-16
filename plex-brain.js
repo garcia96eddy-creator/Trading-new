@@ -21,6 +21,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_BOS_U:"BOS alcista", ST_BOS_D:"BOS bajista",
     ST_CHOCH_U:"CHOCH alcista", ST_CHOCH_D:"CHOCH bajista",
     ST_SWEEP_H:"Barrido de máximo", ST_SWEEP_L:"Barrido de mínimo",
+    ST_SWEEP_L:"Barrido de mínimo",
     ST_RET_U:"Retesteo alcista", ST_RET_D:"Retesteo bajista"
   });
 
