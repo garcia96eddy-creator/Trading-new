@@ -42,8 +42,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     // Objetivo de entrada de 30 segundos
     entryTimeframeMs: 30000,
 
-    // Aprendizaje por refuerzo
-    strategyMinSamples: 30,
     strategyRequireClosedBar: true,
 
     // Zigzag original
@@ -65,12 +63,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     rlUnknown: "skip",
     payout: 0.87,
     priceStaleMs: 4000,
-
-    // Gestión prudente de monto
-    stakeBasePct: 0.01,
-    stakeMaxPct: 0.01,
-    stakeMinSamples: 30,
-    stakeMinWinRate: 0.56,
 
     // Zonas de click
     zoneVary: true,

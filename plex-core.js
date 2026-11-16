@@ -128,184 +128,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   const expiryMs = () => expiryBase() + CFG.holdMarginMs;
 
-  // =========================================================
-  // GESTIÓN DE RIESGO
-  // El porcentaje máximo se toma de CFG.stakeMaxPct.
-  // No se permite superar el límite configurado.
-  // =========================================================
-
-  const STAKE_BASE_PCT = Math.max(
-    0,
-    Math.min(0.01, Number(CFG.stakeBasePct) || 0.01)
-  );
-
-  const STAKE_MAX_PCT = Math.max(
-    0,
-    Math.min(STAKE_BASE_PCT, Number(CFG.stakeMaxPct) || STAKE_BASE_PCT)
-  );
-
-  const STAKE_MIN_SAMPLES = Math.max(1, Number(CFG.strategyMinSamples) || 30);
-  const STAKE_SCALE_START = 0.60;
-  const STAKE_SCALE_FULL = 0.70;
-
-  function readBalance() {
-    if (!document.body) return null;
-
-    const text = document.body.innerText || "";
-    const m = text.match(/\$\s*([\d,]+(?:\.\d{1,2})?)/);
-
-    if (!m) return null;
-
-    const v = Number(m[1].replace(/,/g, ""));
-    return Number.isFinite(v) && v > 0 ? v : null;
-  }
-
-  function stakeForProbability(prob, samples) {
-    const balance = readBalance();
-    if (balance == null) return null;
-
-    let pct = STAKE_BASE_PCT;
-
-    if (
-      samples >= STAKE_MIN_SAMPLES &&
-      Number.isFinite(prob) &&
-      prob > STAKE_SCALE_START &&
-      STAKE_MAX_PCT > STAKE_BASE_PCT
-    ) {
-      const progress = Math.max(
-        0,
-        Math.min(
-          1,
-          (prob - STAKE_SCALE_START) /
-          (STAKE_SCALE_FULL - STAKE_SCALE_START)
-        )
-      );
-
-      pct = STAKE_BASE_PCT +
-        progress * (STAKE_MAX_PCT - STAKE_BASE_PCT);
-    }
-
-    // Protección adicional: nunca superar el máximo configurado.
-    pct = Math.min(pct, STAKE_MAX_PCT);
-
-    const raw = balance * pct;
-
-    // No aumentar el riesgo para alcanzar el mínimo de la plataforma.
-    if (raw < 1) return null;
-
-    return Math.min(balance, Math.round(raw * 100) / 100);
-  }
-
-  const parseAmount = value => {
-    let text = String(value == null ? "" : value)
-      .trim()
-      .replace(/[^\d.,-]/g, "");
-
-    if (!text || text.includes("-")) return null;
-
-    const comma = text.lastIndexOf(",");
-    const dot = text.lastIndexOf(".");
-
-    if (comma >= 0 && dot >= 0) {
-      const decimal = comma > dot ? "," : ".";
-      const grouping = decimal === "," ? /\./g : /,/g;
-      text = text.replace(grouping, "");
-      if (decimal === ",") text = text.replace(",", ".");
-    } else if (comma >= 0 || dot >= 0) {
-      const sep = comma >= 0 ? "," : ".";
-      const pieces = text.split(sep);
-      const decimals = pieces[pieces.length - 1].length;
-      text = pieces.length === 2 && decimals > 0 && decimals <= 2
-        ? pieces[0] + "." + pieces[1]
-        : pieces.join("");
-    }
-
-    const parsed = Number(text);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
-
-  function setTradeAmount(amount) {
-    if (!Number.isFinite(amount) || amount <= 0)
-      return { ok:false, reason:"monto calculado inválido" };
-
-    const inputs = [...document.querySelectorAll("input")].filter(el => {
-      if (!el.isConnected || el.disabled || el.readOnly) return false;
-
-      const r = el.getBoundingClientRect();
-      if (!r.width || !r.height) return false;
-
-      const labels = el.labels
-        ? [...el.labels].map(label => label.innerText)
-        : [];
-      const hint = [
-        el.getAttribute("aria-label"),
-        el.getAttribute("placeholder"),
-        el.getAttribute("name"),
-        el.getAttribute("title"),
-        el.parentElement && el.parentElement.innerText,
-        ...labels
-      ].join(" ").toLowerCase();
-
-      const amountHint =
-        /cantidad|amount|importe|investment|monto|inversi[oó]n|stake/.test(hint);
-      const numericField =
-        ["number", "text", "tel"].includes(el.type) &&
-        r.top > window.innerHeight * 0.35 &&
-        parseAmount(el.value) != null;
-
-      return amountHint || numericField;
-    });
-
-    if (!inputs.length)
-      return {
-        ok:false,
-        reason:"no encontré un campo de monto visible"
-      };
-
-    inputs.sort((a, b) => {
-      const score = el => {
-        const labels = el.labels
-          ? [...el.labels].map(label => label.innerText)
-          : [];
-        const hint = [
-          el.getAttribute("aria-label"),
-          el.getAttribute("placeholder"),
-          el.getAttribute("name"),
-          el.getAttribute("title"),
-          el.parentElement && el.parentElement.innerText,
-          ...labels
-        ].join(" ").toLowerCase();
-
-        return (/cantidad|amount|importe|investment|monto|inversi[oó]n|stake/.test(hint) ? 100 : 0) +
-          (el.type === "number" ? 10 : 0) +
-          (parseAmount(el.value) != null ? 1 : 0);
-      };
-      return score(b) - score(a);
-    });
-
-    const el = inputs[0];
-    const value = amount.toFixed(2);
-
-    const setter = Object.getOwnPropertyDescriptor(
-      Object.getPrototypeOf(el), "value"
-    )?.set;
-
-    if (setter) setter.call(el, value);
-    else el.value = value;
-
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-
-    const actual = parseAmount(el.value);
-
-    return actual != null && Math.abs(actual - amount) < 0.011
-      ? { ok:true }
-      : {
-          ok:false,
-          reason:"el campo no aceptó el monto calculado"
-        };
-  }
-
   const be = () => 1 / (1 + payoutNow());
 
   const execStats = () => {
@@ -504,7 +326,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     }, 100);
   }
 
-  function doTrade(dir, force, t0, src, why, stakeAmount) {
+  function doTrade(dir, force, t0, src, why) {
     if (CFG.demoOnly && !isDemo()) {
       lastEvent = "bloqueado: cuenta real o cuenta demo no detectada";
       say("🔒", "Operación bloqueada: no se pudo confirmar cuenta demo", "demoblock");
@@ -549,22 +371,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     if (!btn) {
       lastEvent = "no encontré botón " + dir;
       return null;
-    }
-
-    if (stakeAmount != null) {
-      const amountResult = setTradeAmount(stakeAmount);
-
-      if (!amountResult.ok) {
-        lastEvent = `operación cancelada: ${amountResult.reason}`;
-
-        say(
-          "⛔",
-          `No se abrió: ${amountResult.reason}`,
-          "stakefail"
-        );
-
-        return null;
-      }
     }
 
     const zone = CFG.zoneVary && src ? pickZone() : 4;
@@ -636,9 +442,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     let mode = "free";
     let stat = "";
     let from = "Lo aprendido";
-    let learnedProb = null;
-    let learnedN = 0;
-
     const ready = CFG.rl && curPrice() != null;
     const keys = brain.keysFor(src, dir, patName);
 
@@ -669,11 +472,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       }
 
       const e = d.k ? rl.Q[d.k] : null;
-
-      if (e && e.N) {
-        learnedProb = e.W / e.N;
-        learnedN = e.N;
-      }
 
       if (e && e.N) {
         stat = `${Math.round(100 * e.W / e.N)}% de acierto ${from === "Lo aprendido" ? "si se sigue" : "en tus entradas de este contexto"} (${e.N} casos; mínimo ${(be() * 100).toFixed(1)}%)`;
@@ -745,37 +543,16 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       ]
     };
 
-    const stakeAmount = src
-      ? stakeForProbability(learnedProb, learnedN)
-      : null;
-
-    if (src && stakeAmount == null) {
-      lastEvent = "operación omitida: no se pudo calcular un monto seguro";
-
-      say("⛔", lastEvent, "stake-unavailable");
-      return null;
-    }
-
-    if (stakeAmount != null) {
-      const bal = readBalance();
-      const pct = bal ? (stakeAmount / bal) * 100 : 0;
-
-      why.lines.push(
-        `Monto: ${stakeAmount.toFixed(2)} (${pct.toFixed(2)}% del saldo; acierto histórico ${
-          learnedProb == null
-            ? "sin muestra suficiente"
-            : Math.round(learnedProb * 100) + "% / " + learnedN + " casos"
-        })`
-      );
-    }
+    why.lines.push(
+      "Monto: se usa el valor configurado en la plataforma; no se modifica."
+    );
 
     const tr = doTrade(
       fd,
       force,
       t0,
       isPat ? "PAT:" + patName : src,
-      why,
-      stakeAmount
+      why
     );
 
     if (tr) {
