@@ -150,6 +150,10 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   cvBars.width=280;
   cvBars.height=72;
 
+  const barTimeframeLabel=el(
+    "div",`color:${GREY};font-size:9px;margin-top:3px`,chartCard
+  );
+
   el("div",`color:${GREY};font-size:9px;margin-top:3px`,chartCard,
     "🟧 máximo · 🟦 mínimo");
 
@@ -720,6 +724,18 @@ window.PLEX_MOD = window.PLEX_MOD || {};
               ` · Evento: <b style="color:${ev==="NONE"?GREY:pCol(ev)}">${esc(PATN[ev]||ev)}</b>`+
               `</div>`;
           }
+
+          const timeframeMs =
+            curBar && Number.isFinite(curBar.timeframe)
+              ? curBar.timeframe
+              : CFG.analysisTimeframeMs;
+          const timeframeSeconds=Math.round(timeframeMs/1000);
+          const timeframeText=timeframeSeconds%60===0
+            ? `${timeframeSeconds/60} min`
+            : `${timeframeSeconds} s`;
+
+          barTimeframeLabel.textContent=
+            `Análisis: ${timeframeText} por vela`;
 
           drawBars(S,bars,curBar);
           drawPL(rl.hist);
