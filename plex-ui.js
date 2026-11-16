@@ -353,9 +353,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     mk("⬇ Exportar CSV",()=>jExport(actions.setLastEvent));
 
-    mk("🗑 Reiniciar RL",()=>{
+    mk("🗑 Reiniciar aprendizaje",()=>{
       brain.resetRL();
-      actions.setLastEvent("RL: aprendizaje borrado");
+      actions.setLastEvent("Aprendizaje y modelo de estructura variable borrados");
     });
 
     setTab(ui.tab>=0&&ui.tab<4?ui.tab:0);
@@ -728,6 +728,32 @@ window.PLEX_MOD = window.PLEX_MOD || {};
               `<div style="margin-top:7px;padding-top:6px;border-top:1px solid #29364a;font-size:10px;color:#9ab">`+
               `Estructura: <b style="color:#cfe">${esc(seq)}</b>`+
               ` · Evento: <b style="color:${ev==="NONE"?GREY:pCol(ev)}">${esc(PATN[ev]||ev)}</b>`+
+              `</div>`;
+          }
+
+          if(S.variablePattern){
+            const v=S.variablePattern;
+            const dir=v.direction==="HIGHER"?"ALCISTA":
+              v.direction==="LOWER"?"BAJISTA":"—";
+            const color=v.direction==="HIGHER"?GREEN:
+              v.direction==="LOWER"?RED:AMBER;
+            const status=v.status==="warming"
+              ? `Formando ventana: ${v.bars}/30 velas cerradas`
+              : v.status==="gap"
+                ? "Esperando 30 velas continuas"
+                : v.status==="collecting"
+                  ? `Aprendiendo: ${v.samples} resultados · ${v.matches}/${v.minMatches||12} coincidencias`
+                  : v.status==="signal"
+                    ? `${dir} · límite inferior ${(v.lower*100).toFixed(1)}% · equilibrio ${(v.threshold*100).toFixed(1)}%`
+                    : `Sin ventaja validada · ${v.matches} coincidencias cercanas`;
+
+            meter.innerHTML+=
+              `<div style="margin-top:7px;padding-top:6px;border-top:1px solid #29364a;font-size:10px;color:#9ab">`+
+              `🧠 Estructura variable (30 velas · venc. ${Math.round((v.horizonMs||30000)/1000)} s): `+
+              `<b style="color:${color}">${esc(status)}</b>`+
+              (v.status==="signal"||v.status==="no-edge"
+                ? ` · ${v.matches} similares de ${v.samples} muestras`
+                : "")+
               `</div>`;
           }
 

@@ -423,6 +423,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   function signal(src, dir, force, t0, patName) {
     const isPat = src === "PAT";
+    const isSeq = src === "SEQ";
     const rl = brain.getRL();
     const { S, cdlNow } = brain.getState();
 
@@ -432,9 +433,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     lastEvent = `Señal detectada: ${label} → ${dirWord(dir)}`;
 
     say(
-      isPat ? "🧩" : src === "TRI" ? "🔺" : "🔀",
+      isPat ? "🧩" : isSeq ? "🧠" : src === "TRI" ? "🔺" : "🔀",
       `${label} → sugiere ${dirWord(dir)}` +
-      (isPat && PATD[patName] ? `: ${PATD[patName]}` : ""),
+      ((isPat || isSeq) && PATD[patName] ? `: ${PATD[patName]}` : ""),
       "sig" + label + dir
     );
 
@@ -454,7 +455,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       return null;
     }
 
-    if (ready && CFG.rlMode === "gate" &&
+    if (isSeq) {
+      mode = "model";
+    } else if (ready && CFG.rlMode === "gate" &&
       (isPat || rl.total >= CFG.rlWarmup)) {
 
       let d = brain.policy(isPat ? keys.slice(0, 3) : keys);
@@ -510,11 +513,12 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     } else if (!ready) {
       mode = "noprice";
-    } else if (CFG.rlMode === "gate") {
+    } else if (!isSeq && CFG.rlMode === "gate") {
       mode = "warm";
     }
 
     const decision =
+      mode === "model" ? "La similitud y su límite estadístico respaldan la dirección" :
       mode === "follow" ? `${from}: ${stat} → la sigo` :
       mode === "fade" ? `${from}: ${stat}; rinde más al revés → entro ${dirWord(fd)}` :
       mode === "warm" ? `Aún aprendiendo (${rl.total}/${CFG.rlWarmup}): opero la señal sin filtro` :
@@ -542,6 +546,16 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         `Regla: un solo sentido; expira en ${Math.round(expiryBase() / 1000)} s`
       ]
     };
+
+    if (isSeq && S.variablePattern) {
+      const v=S.variablePattern;
+      why.lines.push(
+        `Modelo variable: ${v.matches} coincidencias cercanas entre `+
+        `${v.samples} resultados; límite inferior `+
+        `${(v.lower*100).toFixed(1)}% frente a equilibrio `+
+        `${(v.threshold*100).toFixed(1)}%.`
+      );
+    }
 
     why.lines.push(
       "Monto: se usa el valor configurado en la plataforma; no se modifica."
@@ -672,6 +686,14 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     lastP = r.p;
     lastPAt = t0;
+    const barMeta = Object.assign(
+      {},
+      r,
+      {
+        asset:vision.getWsStats().asset,
+        horizonMs:expiryBase()
+      }
+    );
 
     // Pasamos los datos disponibles sin inventar OHLC del servidor.
     // brain.feedBar puede usar los tres primeros argumentos y,
@@ -679,11 +701,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     const barKey = Number.isFinite(r.barStart) ? r.barStart : 0;
 
     if (!barKey || barKey !== lastBarFeed) {
-      brain.feedBar(r.p, r.hi, r.lo, r);
+      brain.feedBar(r.p,r.hi,r.lo,barMeta);
       lastBarFeed = barKey;
     } else {
       // Actualiza el precio dentro de la misma vela local.
-      brain.feedBar(r.p, r.hi, r.lo, r);
+      brain.feedBar(r.p,r.hi,r.lo,barMeta);
     }
   }
 
@@ -721,17 +743,20 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     // El precio y el análisis no dependen del aprendizaje RL.
     updPrice(t0);
 
-    if (CFG.rl) {
-      brain.evalPending(t0, curPrice(), payoutNow(), sess, say);
-      brain.saveRLIfDirty(t0);
-    }
+    brain.evalPending(t0, curPrice(), payoutNow(), sess, say);
+    brain.saveRLIfDirty(t0);
 
     // El análisis se ejecuta aunque RL esté desactivado.
     if (t0 - anAt > 250) {
       anAt = t0;
 
       if (typeof brain.analyze === "function") {
-        fired = brain.analyze(curPrice(), say) || [];
+        fired = brain.analyze(
+          curPrice(),
+          say,
+          payoutNow(),
+          expiryBase()
+        ) || [];
       }
     }
 
@@ -753,7 +778,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         const dir = PAT_DIR[nm];
 
         if (dir === "HIGHER" || dir === "LOWER") {
-          signal("PAT", dir, false, t0, nm);
+          signal(nm==="SEQ_UP" || nm==="SEQ_DN" ? "SEQ" : "PAT",
+            dir, false, t0, nm);
         }
       }
     }

@@ -38,6 +38,14 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     maxBars: 120,
     swingK: 2,
     patCooldownMs: 8000,
+    // Sample only after a full non-overlapping 30-candle window.
+    seqWindowBars: 30,
+    seqSampleSpacingBars: 30,
+    seqMinNeighbors: 12,
+    seqMaxNeighbors: 30,
+    seqMaxDistance: 0.45,
+    seqConfidenceZ: 1.645,
+    seqMaxSamples: 500,
 
     // Objetivo de entrada de 30 segundos
     entryTimeframeMs: 30000,
@@ -158,7 +166,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_SWEEP_H: "Barrido de liquidez superior",
     ST_SWEEP_L: "Barrido de liquidez inferior",
     ST_RET_U: "Retesteo alcista",
-    ST_RET_D: "Retesteo bajista"
+    ST_RET_D: "Retesteo bajista",
+    SEQ_UP: "Estructura variable repetida al alza",
+    SEQ_DN: "Estructura variable repetida a la baja"
   };
 
   const PATD = {
@@ -195,13 +205,16 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_SWEEP_H: "El precio superó un máximo y retrocedió.",
     ST_SWEEP_L: "El precio perforó un mínimo y recuperó.",
     ST_RET_U: "Retesteo de nivel roto al alza.",
-    ST_RET_D: "Retesteo de nivel roto a la baja."
+    ST_RET_D: "Retesteo de nivel roto a la baja.",
+    SEQ_UP: "La secuencia variable de las últimas 30 velas se parece a secuencias previas que subieron antes de su vencimiento medido.",
+    SEQ_DN: "La secuencia variable de las últimas 30 velas se parece a secuencias previas que bajaron antes de su vencimiento medido."
   };
 
   const SRCN = {
     TRI: "Triángulo",
     CRUCE: "Cruce",
     PAT: "Patrón",
+    SEQ: "Estructura variable",
     USR: "Tú"
   };
 
