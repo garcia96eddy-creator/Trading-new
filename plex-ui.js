@@ -353,9 +353,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     mk("⬇ Exportar CSV",()=>jExport(actions.setLastEvent));
 
-    mk("🗑 Reiniciar RL",()=>{
+    mk("🗑 Reiniciar aprendizaje",()=>{
       brain.resetRL();
-      actions.setLastEvent("RL: aprendizaje borrado");
+      actions.setLastEvent("Aprendizaje y modelo de estructura variable borrados");
     });
 
     setTab(ui.tab>=0&&ui.tab<4?ui.tab:0);
@@ -728,6 +728,35 @@ window.PLEX_MOD = window.PLEX_MOD || {};
               `<div style="margin-top:7px;padding-top:6px;border-top:1px solid #29364a;font-size:10px;color:#9ab">`+
               `Estructura: <b style="color:#cfe">${esc(seq)}</b>`+
               ` · Evento: <b style="color:${ev==="NONE"?GREY:pCol(ev)}">${esc(PATN[ev]||ev)}</b>`+
+              `</div>`;
+          }
+
+          if(S.variablePattern){
+            const v=S.variablePattern;
+            const dir=v.direction==="HIGHER"?"ALCISTA":
+              v.direction==="LOWER"?"BAJISTA":"—";
+            const color=v.direction==="HIGHER"?GREEN:
+              v.direction==="LOWER"?RED:AMBER;
+            let status;
+
+            if(v.status==="signal")
+              status=`${dir} · secuencia de ${v.length} velas repetida ${v.occurrences} veces`;
+            else if(v.status==="no-consensus")
+              status=`${v.occurrences} apariciones de ${v.length} velas, sin dirección consistente`;
+            else if(v.status==="gap")
+              status="Esperando velas continuas";
+            else if(v.status==="warming")
+              status=`Formando ventana: ${v.bars}/30 velas cerradas`;
+            else
+              status=`Buscando ${v.requiredOccurrences||3} apariciones similares`;
+
+            meter.innerHTML+=
+              `<div style="margin-top:7px;padding-top:6px;border-top:1px solid #29364a;font-size:10px;color:#9ab">`+
+              `🧠 Estructura variable (${v.bars}/30 velas · venc. ${Math.round((v.horizonMs||30000)/1000)} s): `+
+              `<b style="color:${color}">${esc(status)}</b>`+
+              (v.status==="signal"||v.status==="no-consensus"
+                ? ` · ${v.matches} repeticiones previas`
+                : "")+
               `</div>`;
           }
 

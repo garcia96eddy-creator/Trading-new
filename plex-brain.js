@@ -14,7 +14,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_BOS_U:"HIGHER", ST_BOS_D:"LOWER",
     ST_CHOCH_U:"HIGHER", ST_CHOCH_D:"LOWER",
     ST_SWEEP_H:"LOWER", ST_SWEEP_L:"HIGHER",
-    ST_RET_U:"HIGHER", ST_RET_D:"LOWER"
+    ST_RET_U:"HIGHER", ST_RET_D:"LOWER",
+    SEQ_UP:"HIGHER", SEQ_DN:"LOWER"
   });
 
   Object.assign(PATN, {
@@ -53,10 +54,22 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   let rlDirty = false, rlSavedAt = 0;
   const pending = [];
   let bars = [], curBar = null;
+  const seqStoragePrefix = "iqtri_seq30:";
+  let seqAssetKey = "", seqSamples = [], seqPending = [];
+  let seqDirty = false, seqSavedAt = 0;
+  let seqLastBarStart = 0;
+  let seqState = {
+    status:"warming", bars:0, samples:0, matches:0,
+    occurrences:0, length:0, direction:"", distance:0,
+    horizonMs:CFG.entryTimeframeMs,
+    minMatches:CFG.seqMinMatches,
+    requiredOccurrences:CFG.seqMinOccurrences
+  };
 
   let S = {
     trend:"R", pos:"M", pat:"NONE", atr:0, swH:[], swL:[],
     bias:0, lvl:"N", lvlT:0, mom:0,
+    variablePattern:seqState,
     structure:{
       trend:"R", sequence:"R", event:"NONE",
       bias:0, lastHigh:0, lastLow:0
@@ -94,6 +107,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     meta = meta && typeof meta === "object" ? meta : {};
 
     if (!Number.isFinite(p)) return;
+    if (Object.prototype.hasOwnProperty.call(meta,"asset"))
+      setAsset(meta.asset,meta.horizonMs);
 
     const tf = Math.max(
       1000,
@@ -163,6 +178,13 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     bars = [];
     curBar = null;
     pending.length = 0;
+    seqPending.length = 0;
+    seqLastBarStart = 0;
+
+    if (!seqAssetKey) {
+      seqSamples = [];
+    }
+
     structBreak = null;
     brk = null;
 
@@ -179,6 +201,272 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     for (const k in patState)
       delete patState[k];
+  }
+
+  function setAsset(asset,horizonMs) {
+    const raw = typeof asset === "string" || typeof asset === "number"
+      ? String(asset).trim().slice(0,100)
+      : "";
+    const tf = Math.max(1000,Number(CFG.analysisTimeframeMs)||60000);
+    const horizon = Math.max(
+      1000,Number(horizonMs)||Number(CFG.entryTimeframeMs)||30000
+    );
+    const next = raw ? `${raw}|${tf}|${horizon}` : "";
+
+    if (next === seqAssetKey) return;
+
+    if (seqDirty && seqAssetKey)
+      saveCal(seqStoragePrefix+encodeURIComponent(seqAssetKey),seqSamples);
+
+    seqDirty=false;
+    seqSavedAt=0;
+    seqAssetKey = next;
+    seqSamples = next
+      ? loadCal(seqStoragePrefix+encodeURIComponent(next)) || []
+      : [];
+    seqSamples = Array.isArray(seqSamples)
+      ? seqSamples.filter(s =>
+          s &&
+          Array.isArray(s.x) &&
+          Number.isInteger(s.length) &&
+          s.length >= CFG.seqMinLength &&
+          s.length <= CFG.seqMaxLength &&
+          s.x.length === s.length*4 &&
+          s.x.every(Number.isFinite) &&
+          [-1,0,1].includes(s.r) &&
+          Number.isFinite(s.endBarStart)
+        )
+      : [];
+    if (seqSamples.length>CFG.seqMaxSamples)
+      seqSamples=seqSamples.slice(-CFG.seqMaxSamples);
+    seqPending = [];
+    seqLastBarStart = 0;
+    seqState = {
+      status:"warming", bars:0, samples:seqSamples.length, matches:0,
+      occurrences:0, length:0, direction:"", distance:0,
+      horizonMs:horizon,
+      minMatches:CFG.seqMinMatches,
+      requiredOccurrences:CFG.seqMinOccurrences
+    };
+  }
+
+  function sequenceFeatures(window) {
+    if (!Array.isArray(window) ||
+        window.length<CFG.seqMinLength ||
+        window.length>CFG.seqMaxLength)
+      return null;
+
+    const size = window.length;
+
+    const tf = Math.max(1000,Number(CFG.analysisTimeframeMs)||60000);
+    const returns = [];
+    let rangeSum = 0;
+
+    for (let i=0; i<size; i++) {
+      const b = window[i];
+      if (!b || !(b.c>0) || !Number.isFinite(b.o) ||
+          !Number.isFinite(b.h) || !Number.isFinite(b.l))
+        return null;
+
+      if (i && b.t-window[i-1].t>tf*1.5)
+        return null;
+
+      const previous = i ? window[i-1].c : b.o;
+      if (!(previous>0)) return null;
+
+      returns.push(Math.log(b.c/previous));
+      rangeSum += Math.max(0,b.h-b.l);
+    }
+
+    const vol = Math.sqrt(
+      returns.reduce((sum,r) => sum+r*r,0)/size
+    );
+    const avgRange = rangeSum/size;
+    if (!(vol>1e-8) || !(avgRange>0)) return null;
+
+    const features = [];
+
+    for (let i=0; i<size; i++) {
+      const b = window[i];
+      const range = Math.max(b.h-b.l,avgRange*0.01);
+      const normalizedReturn = Math.max(-4,Math.min(4,returns[i]/vol));
+      const normalizedRange = Math.max(
+        -3,Math.min(3,Math.log(range/avgRange))
+      );
+      const body = Math.max(-1,Math.min(1,(b.c-b.o)/range));
+      const closePosition = Math.max(
+        -1,Math.min(1,2*(b.c-b.l)/range-1)
+      );
+
+      features.push(
+        normalizedReturn,
+        normalizedRange,
+        body,
+        closePosition
+      );
+    }
+
+    return features;
+  }
+
+  function sequenceDistance(a,b) {
+    const size = a && a.length/4;
+    if (!Array.isArray(a) || !Array.isArray(b) ||
+        !Number.isInteger(size) || b.length!==size*4)
+      return Infinity;
+
+    let sum = 0;
+
+    for (let i=0; i<size; i++) {
+      const j = i*4;
+      sum += 0.50*(a[j]-b[j])**2+
+        0.15*(a[j+1]-b[j+1])**2+
+        0.20*(a[j+2]-b[j+2])**2+
+        0.15*(a[j+3]-b[j+3])**2;
+    }
+
+    return Math.sqrt(sum/size);
+  }
+
+  function sequenceStep(B,current,p,horizonMs,say) {
+    if (!current || !Number.isFinite(p) ||
+        current.t===seqLastBarStart)
+      return null;
+
+    seqLastBarStart = current.t;
+
+    const horizon = Math.max(
+      1000,Number(horizonMs)||Number(CFG.entryTimeframeMs)||30000
+    );
+    const timeframe = Number(current.timeframe)||
+      Number(CFG.analysisTimeframeMs)||60000;
+    const windowMs = CFG.seqWindowBars*timeframe;
+    const currentEnd = B.length ? B[B.length-1].t : 0;
+    const barsSeen = Math.min(B.length,CFG.seqWindowBars);
+    const recentSamples = seqSamples.filter(s =>
+      currentEnd-s.endBarStart>=0 &&
+      currentEnd-s.endBarStart+(s.length-1)*timeframe<=windowMs
+    );
+    const predictions = [], repeated = [];
+    const maxLength = Math.min(CFG.seqMaxLength,B.length);
+
+    for (let length=CFG.seqMinLength; length<=maxLength; length++) {
+      const currentFeatures=sequenceFeatures(B.slice(-length));
+      if (!currentFeatures) continue;
+
+      const candidates=recentSamples
+        .filter(s =>
+          s.length===length &&
+          currentEnd-s.endBarStart>=length*timeframe
+        )
+        .map(s=>({s,d:sequenceDistance(currentFeatures,s.x)}))
+        .filter(x=>x.d<=CFG.seqMaxDistance)
+        .sort((a,b)=>a.d-b.d);
+      const chosen=[];
+
+      for (const candidate of candidates) {
+        if (chosen.every(x =>
+          Math.abs(x.s.endBarStart-candidate.s.endBarStart)>=length*timeframe
+        ))
+          chosen.push(candidate);
+
+        if (chosen.length>=CFG.seqMinMatches) break;
+      }
+
+      if (chosen.length<CFG.seqMinMatches) continue;
+
+      const ups=chosen.filter(x=>x.s.r===1).length;
+      const downs=chosen.filter(x=>x.s.r===-1).length;
+      const match={
+        length,
+        matches:chosen.length,
+        distance:chosen.reduce((sum,x)=>sum+x.d,0)/chosen.length
+      };
+
+      repeated.push(match);
+
+      if (ups===chosen.length || downs===chosen.length) {
+        predictions.push(Object.assign({},match,{
+          direction:ups===chosen.length ? "HIGHER":"LOWER"
+        }));
+      }
+    }
+
+    predictions.sort((a,b)=>a.distance-b.distance || b.length-a.length);
+    repeated.sort((a,b)=>a.distance-b.distance || b.length-a.length);
+    const best=predictions[0]||null;
+    const closest=repeated[0]||null;
+    const status=best ? "signal" :
+      closest ? "no-consensus" :
+      barsSeen<CFG.seqWindowBars ? "warming" : "searching";
+
+    for (let length=CFG.seqMinLength; length<=maxLength; length++) {
+      const features=sequenceFeatures(B.slice(-length));
+      if (!features) continue;
+
+      seqPending.push({
+        exp:performance.now()+horizon,
+        p0:p,
+        x:features,
+        length,
+        endBarStart:B[B.length-1].t
+      });
+    }
+
+    seqState = {
+      status,
+      bars:barsSeen,
+      samples:recentSamples.length,
+      matches:best ? best.matches : closest ? closest.matches : 0,
+      occurrences:best
+        ? best.matches+1
+        : closest ? closest.matches+1 : 0,
+      length:best ? best.length : closest ? closest.length : 0,
+      direction:best ? best.direction : "",
+      distance:best ? best.distance : closest ? closest.distance : 0,
+      horizonMs:horizon,
+      minMatches:CFG.seqMinMatches,
+      requiredOccurrences:CFG.seqMinOccurrences
+    };
+
+    if (!best) return null;
+
+    const name=best.direction==="HIGHER" ? "SEQ_UP":"SEQ_DN";
+    say(
+      "🧠",
+      `${PATN[name]} · secuencia de ${best.length} velas: `+
+      `${best.matches} repeticiones previas coinciden; `+
+      `${best.matches+1} apariciones en total`,
+      "seq"+current.t+best.direction
+    );
+    return name;
+  }
+
+  function evalSequencePending(t0,p1) {
+    if (!seqPending.length || p1==null) return;
+
+    for (let i=seqPending.length-1; i>=0; i--) {
+      const s=seqPending[i];
+      if (t0<s.exp) continue;
+
+      seqPending.splice(i,1);
+      if (t0-s.exp>5000) continue;
+
+      const r=p1>s.p0 ? 1 : p1<s.p0 ? -1 : 0;
+      seqSamples.push({
+        x:s.x,
+        length:s.length,
+        r,
+        endBarStart:s.endBarStart,
+        t:Date.now()
+      });
+
+      if (seqSamples.length>CFG.seqMaxSamples)
+        seqSamples.shift();
+
+      seqState.samples++;
+      seqDirty=true;
+    }
   }
 
   const ema = (arr, n) => {
@@ -311,13 +599,15 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     return out;
   }
 
-  function analyze(p, say) {
+  function analyze(p, say, horizonMs) {
     const B = bars, n = B.length;
+    const sequenceSignal = sequenceStep(B,curBar,p,horizonMs,say);
 
     if (n<7 || !curBar || p==null) {
       S = {
         trend:"R", pos:"M", pat:"NONE", atr:S.atr,
         swH:[], swL:[], bias:0, lvl:"N", lvlT:0, mom:0,
+        variablePattern:seqState,
         structure:{
           trend:"R", sequence:"R", event:"NONE",
           bias:0, lastHigh:0, lastLow:0
@@ -615,6 +905,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     }
 
     const fired=[];
+    if (sequenceSignal) fired.push(sequenceSignal);
     let cur="NONE";
 
     for (const nm of STRUCT) {
@@ -749,6 +1040,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       lvl:lv ? lv.k : "N",
       lvlT:lv ? lv.t : 0,
       mom,
+      variablePattern:seqState,
       structure:{
         trend:structTrend,
         sequence:seqUp ? "HH/HL" : seqDown ? "LH/LL" : "R",
@@ -875,6 +1167,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   }
 
   function evalPending(t0,p1,pay,sess,say) {
+    evalSequencePending(t0,p1);
     if (!pending.length || p1==null) return;
 
     for (let i=pending.length-1; i>=0; i--) {
@@ -1026,6 +1319,19 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     pending.length=0;
     saveCal(RL_KEY,rl);
+    seqSamples=[];
+    seqPending=[];
+    seqDirty=false;
+    seqState={
+      status:"warming", bars:0, samples:0, matches:0,
+      occurrences:0, length:0, direction:"", distance:0,
+      horizonMs:CFG.entryTimeframeMs,
+      minMatches:CFG.seqMinMatches,
+      requiredOccurrences:CFG.seqMinOccurrences
+    };
+
+    if (seqAssetKey)
+      saveCal(seqStoragePrefix+encodeURIComponent(seqAssetKey),seqSamples);
   }
 
   function saveRLIfDirty(t0) {
@@ -1033,6 +1339,15 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       rlDirty=false;
       rlSavedAt=t0;
       saveCal(RL_KEY,rl);
+    }
+
+    if (seqDirty && seqAssetKey && t0-seqSavedAt>2000) {
+      seqDirty=false;
+      seqSavedAt=t0;
+      saveCal(
+        seqStoragePrefix+encodeURIComponent(seqAssetKey),
+        seqSamples
+      );
     }
   }
 
@@ -1044,6 +1359,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     getRL:()=>rl,
     getState:()=>({S,bars,curBar,cdlNow}),
     feedBar,
+    setAsset,
     resetMarket,
     analyze,
     keysFor,
