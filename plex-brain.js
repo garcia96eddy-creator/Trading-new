@@ -1,7 +1,5 @@
-
-// PLEX v5.8 - Módulo 3: Estructura de Mercado, Acción del Precio y RL
-// Añade HH/HL, LH/LL, BOS, CHOCH, barridos y retesteos.
-// Conserva el motor de velas, patrones y aprendizaje anterior.
+// PLEX v6.1 - Módulo 3: Estructura de Mercado, Acción del Precio y RL
+// Conserva el motor original e incorpora cinco estrategias adaptativas.
 window.PLEX_MOD = window.PLEX_MOD || {};
 
 (() => {
@@ -21,7 +19,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_BOS_U:"BOS alcista", ST_BOS_D:"BOS bajista",
     ST_CHOCH_U:"CHOCH alcista", ST_CHOCH_D:"CHOCH bajista",
     ST_SWEEP_H:"Barrido de máximo", ST_SWEEP_L:"Barrido de mínimo",
-    ST_SWEEP_L:"Barrido de mínimo",
     ST_RET_U:"Retesteo alcista", ST_RET_D:"Retesteo bajista"
   });
 
@@ -66,8 +63,39 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     "ST_SWEEP_H","ST_SWEEP_L","ST_RET_U","ST_RET_D",
     "BRK_UP","BRK_DN","DBOT","DTOP","PULL_U","PULL_D",
     "REJ_B","REJ_T","INS_UP","INS_DN","RET_UP","RET_DN",
-    "LVL_B","LVL_T"
+    "LVL_B","LVL_T",
+    "ST_TREND_U","ST_TREND_D","ST_BREAK_U","ST_BREAK_D",
+    "ST_REJECT_U","ST_REJECT_D","ST_RANGE_U","ST_RANGE_D"
   ];
+
+  Object.assign(PAT_DIR, {
+    ST_TREND_U:"HIGHER", ST_TREND_D:"LOWER",
+    ST_BREAK_U:"HIGHER", ST_BREAK_D:"LOWER",
+    ST_REJECT_U:"HIGHER", ST_REJECT_D:"LOWER",
+    ST_RANGE_U:"HIGHER", ST_RANGE_D:"LOWER"
+  });
+
+  Object.assign(PATN, {
+    ST_TREND_U:"Continuación alcista HH/HL",
+    ST_TREND_D:"Continuación bajista LH/LL",
+    ST_BREAK_U:"Ruptura y retesteo alcista",
+    ST_BREAK_D:"Ruptura y retesteo bajista",
+    ST_REJECT_U:"Rechazo alcista de nivel",
+    ST_REJECT_D:"Rechazo bajista de nivel",
+    ST_RANGE_U:"Rebote alcista en rango",
+    ST_RANGE_D:"Rebote bajista en rango"
+  });
+
+  Object.assign(PATD, {
+    ST_TREND_U:"estructura HH/HL y cierre confirmado a favor de la tendencia",
+    ST_TREND_D:"estructura LH/LL y cierre confirmado a favor de la tendencia",
+    ST_BREAK_U:"ruptura alcista seguida de retesteo y cierre por encima del nivel",
+    ST_BREAK_D:"ruptura bajista seguida de retesteo y cierre por debajo del nivel",
+    ST_REJECT_U:"vela cerrada con rechazo de soporte y cierre alcista",
+    ST_REJECT_D:"vela cerrada con rechazo de resistencia y cierre bajista",
+    ST_RANGE_U:"rebote confirmado en la parte baja de un rango lateral",
+    ST_RANGE_D:"rechazo confirmado en la parte alta de un rango lateral"
+  });
 
   let cdlBarT = 0;
   let cdlNow = { t:0, names:[], color:"" };
@@ -250,7 +278,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     atr /= m;
     if (!(atr>0)) atr=1e-5;
 
-    // Pivotes confirmados: no utiliza velas futuras fuera del historial disponible.
+    // Pivotes confirmados.
     const swH=[], swL=[];
 
     for (let i=K; i<n-K; i++) {
@@ -372,12 +400,16 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       act.BRK_DN=1;
     }
 
-    // Barridos de liquidez: rompe con mecha y recupera el nivel.
-    if (lastH && cb.h>lastH.p+0.08*atr &&
+    // Barridos intrabar solo cuando no se exige esperar el cierre.
+    if (CFG.strategyRequireClosedBar === false &&
+        CFG.strategyLiquiditySweep !== false &&
+        lastH && cb.h>lastH.p+0.08*atr &&
         p<lastH.p-0.02*atr)
       act.ST_SWEEP_H=1;
 
-    if (lastL && cb.l<lastL.p-0.08*atr &&
+    if (CFG.strategyRequireClosedBar === false &&
+        CFG.strategyLiquiditySweep !== false &&
+        lastL && cb.l<lastL.p-0.08*atr &&
         p>lastL.p+0.02*atr)
       act.ST_SWEEP_L=1;
 
@@ -465,6 +497,100 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         act.LVL_T=1;
     }
 
+    // Estrategias adaptativas basadas en velas cerradas.
+    const closedOnly = CFG.strategyRequireClosedBar !== false;
+    const strat = {};
+
+    if (CFG.useAdaptiveStrategies !== false && B.length >= 8) {
+      const z = B.length - 1;
+      const c = B[z], q = B[z-1];
+      const candleRange = Math.max(c.h-c.l, 1e-9);
+      const body = Math.abs(c.c-c.o);
+      const lowerWick = Math.min(c.o,c.c)-c.l;
+      const upperWick = c.h-Math.max(c.o,c.c);
+      const bull = c.c>c.o, bear = c.c<c.o;
+
+      const recent = B.slice(Math.max(0,z-19),z);
+      const rangeHigh = Math.max(...recent.map(x=>x.h));
+      const rangeLow = Math.min(...recent.map(x=>x.l));
+      const width = rangeHigh-rangeLow;
+      const rangePos = width>0 ? (c.c-rangeLow)/width : 0.5;
+
+      const rangeMode = width <= Math.max(atr*5.5,1e-9) &&
+        Math.abs(c.c-B[Math.max(0,z-8)].c) <= atr*1.8;
+
+      const closedGate = !closedOnly || (curBar && curBar.t !== c.t);
+
+      if (closedGate) {
+        // 1. Continuación de estructura HH/HL o LH/LL.
+        if (CFG.strategyTrend !== false) {
+          if (seqUp && bull && c.c>q.c && c.c>e9)
+            strat.ST_TREND_U=1;
+
+          if (seqDown && bear && c.c<q.c && c.c<e9)
+            strat.ST_TREND_D=1;
+        }
+
+        // 2. Ruptura y retesteo: q rompe el rango previo y c lo confirma.
+        if (CFG.strategyBreakRetest !== false) {
+          const prior = B.slice(Math.max(0,z-9),z-1);
+
+          if (prior.length >= 3) {
+            const priorHigh = Math.max(...prior.map(x=>x.h));
+            const priorLow = Math.min(...prior.map(x=>x.l));
+
+            const brokeUp = q.c>priorHigh+0.03*atr;
+            const brokeDown = q.c<priorLow-0.03*atr;
+
+            if (brokeUp && c.l<=priorHigh+0.18*atr &&
+                c.c>priorHigh+0.03*atr && bull)
+              strat.ST_BREAK_U=1;
+
+            if (brokeDown && c.h>=priorLow-0.18*atr &&
+                c.c<priorLow-0.03*atr && bear)
+              strat.ST_BREAK_D=1;
+          }
+        }
+
+        // 3. Rechazo confirmado en soporte o resistencia.
+        if (CFG.strategyRejection !== false && lv) {
+          if (lv.k==="S" && c.l<=lv.p+0.20*atr &&
+              lowerWick>=Math.max(body*1.5,candleRange*0.38) &&
+              bull && c.c>lv.p)
+            strat.ST_REJECT_U=1;
+
+          if (lv.k==="R" && c.h>=lv.p-0.20*atr &&
+              upperWick>=Math.max(body*1.5,candleRange*0.38) &&
+              bear && c.c<lv.p)
+            strat.ST_REJECT_D=1;
+        }
+
+        // 4. Barrido de liquidez y cierre de vuelta dentro del swing.
+        if (CFG.strategyLiquiditySweep !== false) {
+          if (lastH && c.h>lastH.p+0.06*atr &&
+              c.c<lastH.p && upperWick>body*1.2)
+            strat.ST_SWEEP_H=1;
+
+          if (lastL && c.l<lastL.p-0.06*atr &&
+              c.c>lastL.p && lowerWick>body*1.2)
+            strat.ST_SWEEP_L=1;
+        }
+
+        // 5. Rebote en los extremos de un rango lateral.
+        if (CFG.strategyRange !== false && rangeMode && width>atr*1.2) {
+          if (rangePos<0.25 && bull &&
+              lowerWick>body*0.8 && c.c>rangeLow+width*0.12)
+            strat.ST_RANGE_U=1;
+
+          if (rangePos>0.75 && bear &&
+              upperWick>body*0.8 && c.c<rangeHigh-width*0.12)
+            strat.ST_RANGE_D=1;
+        }
+      }
+    }
+
+    Object.assign(act,strat);
+
     const fired=[];
     let cur="NONE";
 
@@ -485,12 +611,14 @@ window.PLEX_MOD = window.PLEX_MOD || {};
             brk={dir:"D",lvl:lastL.p,t:now,ext:0};
         }
       }
+
       patState[nm]=!!act[nm];
     }
 
     if (last.t!==cdlBarT) {
       cdlBarT=last.t;
       const names=detectCandles(B,atr,trend,pos);
+
       cdlNow={
         t:last.t,
         names,
@@ -528,6 +656,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     }
 
     let cd=0;
+
     for (const nm of cdlNow.names) {
       if (nm!=="DOJI" && PAT_DIR[nm])
         cd+=PAT_DIR[nm]==="HIGHER" ? 1 : -1;
@@ -577,6 +706,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
             bb>0 ? "ALCISTA":"BAJISTA"
           } (${bias>0?"+":""}${bias}): ${parts.join(", ")}`,
           "pa"+bb);
+
       lastBB=bb;
     }
 
@@ -671,6 +801,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
           lcb:lcb(e.f)
         };
     }
+
     return null;
   }
 
@@ -712,6 +843,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
           const e=ent(k);
           upd(e.f,rF);
           upd(e.x,rX);
+
           if (!tie) {
             e.N++;
             if (win) e.W++;
@@ -795,6 +927,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
         if (s.tr) {
           s.tr.r=r;
+
           jAdd({
             t:s.tr.t, src:s.src, pat:s.pat,
             dir:s.ex, zone:s.tr.zone,
