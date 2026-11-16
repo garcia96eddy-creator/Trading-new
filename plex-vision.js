@@ -142,6 +142,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         ? Math.min(a.lo, v)
         : v;
 
+      // OHLC local construido con precios observados por WebSocket.
       updateLocalBar(v, wallNow);
 
       if (now - a.ws > 10000) {
@@ -267,7 +268,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       r.barEnd = localBar.end;
       r.barTicks = localBar.ticks;
       r.barTimeframeMs = BAR_MS;
-      r.barSource = "local-ticks";
+      r.barSource = "local-ws";
     }
 
     return r;
