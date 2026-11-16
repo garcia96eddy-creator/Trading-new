@@ -145,6 +145,19 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   );
   const mkt=el("div",CARD+";margin-top:6px",panes[0]);
   const meter=el("div",CARD+";margin-top:6px",panes[0]);
+  const motifCard=el("div",CARD+";margin-top:6px;padding:6px 8px",panes[0]);
+  const motifHead=el(
+    "div","color:#cfe;font-size:10px;font-weight:bold;margin-bottom:3px",motifCard
+  );
+  const cvMotif=el(
+    "canvas","width:100%;height:84px;border-radius:6px;display:block",motifCard
+  );
+  cvMotif.width=280;
+  cvMotif.height=84;
+  el(
+    "div",`color:${GREY};font-size:9px;margin-top:3px`,motifCard,
+    "Movimiento normalizado · actual (verde/rojo) · repeticiones (azul/violeta)"
+  );
   const chartCard=el("div",CARD+";margin-top:6px;padding:6px",panes[0]);
   const cvBars=el("canvas","width:100%;height:72px;border-radius:6px;display:block",chartCard);
   cvBars.width=280;
@@ -518,6 +531,91 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     }
   }
 
+  function drawMotif(v){
+    const g=cvMotif.getContext("2d");
+    const W=cvMotif.width,H=cvMotif.height;
+    const chart=v&&v.chart;
+
+    g.clearRect(0,0,W,H);
+    g.fillStyle="#0b111b";
+    g.fillRect(0,0,W,H);
+
+    if(!chart||!Array.isArray(chart.current)||chart.current.length<2){
+      motifHead.textContent="Motivo repetido: buscando coincidencias…";
+      g.fillStyle="#789";
+      g.font="10px sans-serif";
+      g.fillText("Aún no hay tres apariciones comparables",8,42);
+      return;
+    }
+
+    const repeats=Array.isArray(chart.repeats)?chart.repeats:[];
+    const currentColor=v.direction==="HIGHER"?GREEN:
+      v.direction==="LOWER"?RED:AMBER;
+    const lines=[
+      {values:chart.current,color:currentColor,width:2.2},
+      ...repeats.slice(0,2).map((values,i)=>({
+        values,
+        color:i===0?"#58a6ff":"#b58cff",
+        width:1.2
+      }))
+    ].filter(line =>
+      Array.isArray(line.values)&&
+      line.values.length===chart.current.length&&
+      line.values.every(Number.isFinite)
+    );
+
+    if(!lines.length){
+      motifHead.textContent="Motivo repetido: datos incompletos";
+      return;
+    }
+
+    motifHead.textContent=
+      `Motivo de ${v.length} velas · ${v.occurrences} apariciones`+
+      (v.direction
+        ? ` · ${v.direction==="HIGHER"?"sesgo alcista":"sesgo bajista"}`
+        : " · sin dirección común");
+
+    const values=[];
+    lines.forEach(line=>line.values.forEach(value=>values.push(value)));
+    let min=Math.min(0,...values),max=Math.max(0,...values);
+    if(max===min){max+=1;min-=1;}
+
+    const padX=8,padY=9;
+    const x=i=>padX+i/(chart.current.length-1)*(W-2*padX);
+    const y=value=>H-padY-(value-min)/(max-min)*(H-2*padY);
+
+    g.strokeStyle="#334155";
+    g.lineWidth=1;
+    g.beginPath();
+    g.moveTo(padX,y(0));
+    g.lineTo(W-padX,y(0));
+    g.stroke();
+
+    lines.slice(1).forEach(line=>{
+      g.strokeStyle=line.color;
+      g.lineWidth=line.width;
+      g.setLineDash([3,3]);
+      g.beginPath();
+      line.values.forEach((value,i)=>{
+        if(i)g.lineTo(x(i),y(value));
+        else g.moveTo(x(i),y(value));
+      });
+      g.stroke();
+    });
+
+    const current=lines[0];
+    g.setLineDash([]);
+    g.strokeStyle=current.color;
+    g.lineWidth=current.width;
+    g.beginPath();
+    current.values.forEach((value,i)=>{
+      if(i)g.lineTo(x(i),y(value));
+      else g.moveTo(x(i),y(value));
+    });
+    g.stroke();
+    g.lineWidth=1;
+  }
+
   function drawPL(hist){
     const g=cvPL.getContext("2d");
     const W=cvPL.width,H=cvPL.height;
@@ -773,6 +871,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
             `Análisis: ${timeframeText} por vela`;
 
           drawBars(S,bars,curBar);
+          drawMotif(S.variablePattern);
           drawPL(rl.hist);
 
           plVal.textContent=(rl.pl>=0?"+":"")+rl.pl.toFixed(2);
