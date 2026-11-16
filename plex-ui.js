@@ -17,21 +17,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     loadCal("iqtri_ui") || {}
   );
 
-  // Restaurar los toggles de estrategias guardados por la interfaz.
-  // Solo se aplican claves booleanas reconocidas; si no hay datos,
-  // se conservan los valores definidos en CFG.
-  const savedStrategies = loadCal("iqtri_strategy_settings") || {};
-  [
-    "strategyTrend",
-    "strategyBreakRetest",
-    "strategyRejection",
-    "strategyLiquiditySweep",
-    "strategyRange"
-  ].forEach(key => {
-    if (typeof savedStrategies[key] === "boolean")
-      CFG[key] = savedStrategies[key];
-  });
-
   if (ui.sound === false) CFG.sound = false;
 
   const GREEN="#3ddc84", RED="#ff5c5c", AMBER="#ffc857";
@@ -51,16 +36,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_BOS_U:"⬆", ST_BOS_D:"⬇",
     ST_CHOCH_U:"↗", ST_CHOCH_D:"↘",
     ST_SWEEP_H:"⌃", ST_SWEEP_L:"⌄",
-    ST_RET_U:"↻", ST_RET_D:"↺",
-    ST_TREND_U:"📈", ST_TREND_D:"📉",
-    ST_BREAK_U:"🚀", ST_BREAK_D:"🔻",
-    ST_REJECT_U:"🛡", ST_REJECT_D:"🛡",
-    ST_RANGE_U:"↗", ST_RANGE_D:"↘"
+    ST_RET_U:"↻", ST_RET_D:"↺"
   };
 
   const SRC_ICON={
-    TRI:"🔺", CRUCE:"🔀", PAT:"🧩", USR:"👤",
-    STRATEGY:"🎯"
+    TRI:"🔺", CRUCE:"🔀", PAT:"🧩", USR:"👤"
   };
 
   const pGlyph=k=>PGLYPH[k]||"•";
@@ -343,59 +323,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     });
     paintToggle(pb,"🧩 Patrones",CFG.usePatterns);
 
-    // Activación individual de estrategias.
-    mkSec("Cinco estrategias adaptativas");
-
-    const strategyButtons=[
-      ["strategyTrend","📈 Tendencia HH/HL"],
-      ["strategyBreakRetest","🚀 Ruptura + retesteo"],
-      ["strategyRejection","🛡 Rechazo de niveles"],
-      ["strategyLiquiditySweep","💧 Barrido de liquidez"],
-      ["strategyRange","↔ Rebote en rango"]
-    ];
-
-    strategyButtons.forEach(([key,label])=>{
-      const bt=mk("",button=>{
-        CFG[key]=CFG[key]===false;
-        paintToggle(button,label,CFG[key]!==false);
-        saveCal("iqtri_strategy_settings",{
-          strategyTrend:CFG.strategyTrend,
-          strategyBreakRetest:CFG.strategyBreakRetest,
-          strategyRejection:CFG.strategyRejection,
-          strategyLiquiditySweep:CFG.strategyLiquiditySweep,
-          strategyRange:CFG.strategyRange
-        });
-      });
-
-      paintToggle(bt,label,CFG[key]!==false);
-    });
-
-    mk("✅ Activar las cinco",()=>{
-      strategyButtons.forEach(([key])=>CFG[key]=true);
-      saveCal("iqtri_strategy_settings",{
-        strategyTrend:true,
-        strategyBreakRetest:true,
-        strategyRejection:true,
-        strategyLiquiditySweep:true,
-        strategyRange:true
-      });
-      actions.setLastEvent("cinco estrategias activadas");
-      renderFn();
-    });
-
-    mk("⛔ Desactivar las cinco",()=>{
-      strategyButtons.forEach(([key])=>CFG[key]=false);
-      saveCal("iqtri_strategy_settings",{
-        strategyTrend:false,
-        strategyBreakRetest:false,
-        strategyRejection:false,
-        strategyLiquiditySweep:false,
-        strategyRange:false
-      });
-      actions.setLastEvent("cinco estrategias desactivadas");
-      renderFn();
-    });
-
     mkSec("Calibración y datos");
 
     mk("🎨 Cal ▲",()=>{
@@ -671,12 +598,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       return {
         ic:"⏸",t:"En pausa: tocaste la pantalla",
         c:AMBER,bg:"#3a2f12"
-      };
-
-    if(CFG.rlMode!=="gate")
-      return {
-        ic:"🟢",t:"Entradas sin filtro · RL solo aprende",
-        c:GREEN,bg:"#12351f"
       };
 
     if(rl.total<CFG.rlWarmup)
