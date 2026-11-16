@@ -733,9 +733,14 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       } catch (e) {}
     }
 
-    const d = tc.getImageData(
-      0, 0, w, h
-    ).data;
+    let d;
+
+    try {
+      d = tc.getImageData(0, 0, w, h).data;
+    } catch (e) {
+      calMode = null;
+      return "cal: el gráfico no permite leer colores";
+    }
 
     let best = null;
     let bestScore = 0;

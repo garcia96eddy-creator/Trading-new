@@ -284,7 +284,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     bt.style.color=on?GREEN:"#fff";
   };
 
-  let sndBtn=null,headTxt="";
+  let sndBtn=null,headTxt="",settingsStatus=null;
 
   function setupButtons(actions){
     mkSec("Pruebas");
@@ -328,6 +328,12 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     paintToggle(pb,"🧩 Patrones",CFG.usePatterns);
 
     mkSec("Calibración y datos");
+    settingsStatus=el(
+      "div",
+      CARD+";grid-column:1/-1;color:#9ab;font-size:10px;line-height:1.4",
+      btns,
+      "Calibración y diario listos."
+    );
 
     mk("🎨 Cal ▲",()=>{
       vision.setCalMode("U");
@@ -772,6 +778,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
         }else if(tab===1){
           nowStatus.innerHTML=statusHtml(st);
+          nowStatus.innerHTML+=
+            `<div style="margin-top:4px;color:#9ab;font-size:10px">`+
+            `${esc(d.lastEvent||"Esperando una señal…")}</div>`;
 
           const o=d.openTrades,now=Date.now();
           const zzM=/(▲|▼)/.exec(d.crossInfo||"");
@@ -930,6 +939,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     box,
     setupButtons,
     paintHeader,
+    setSettingsStatus:text=>{
+      if(settingsStatus) settingsStatus.textContent=String(text);
+    },
     initDashboard
   };
 })();
