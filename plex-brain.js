@@ -63,7 +63,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     occurrences:0, length:0, direction:"", distance:0,
     horizonMs:CFG.entryTimeframeMs,
     minMatches:CFG.seqMinMatches,
-    requiredOccurrences:CFG.seqMinOccurrences
+    requiredOccurrences:CFG.seqMinOccurrences,
+    chart:null
   };
 
   let S = {
@@ -246,7 +247,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       occurrences:0, length:0, direction:"", distance:0,
       horizonMs:horizon,
       minMatches:CFG.seqMinMatches,
-      requiredOccurrences:CFG.seqMinOccurrences
+      requiredOccurrences:CFG.seqMinOccurrences,
+      chart:null
     };
   }
 
@@ -328,6 +330,18 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     return Math.sqrt(sum/size);
   }
 
+  function sequenceTrace(features) {
+    const trace=[0];
+    let value=0;
+
+    for (let i=0; i<features.length; i+=4) {
+      value+=features[i];
+      trace.push(value);
+    }
+
+    return trace;
+  }
+
   function sequenceStep(B,current,p,horizonMs,say) {
     if (!current || !Number.isFinite(p) ||
         current.t===seqLastBarStart)
@@ -380,7 +394,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       const match={
         length,
         matches:chosen.length,
-        distance:chosen.reduce((sum,x)=>sum+x.d,0)/chosen.length
+        distance:chosen.reduce((sum,x)=>sum+x.d,0)/chosen.length,
+        chart:{
+          current:sequenceTrace(currentFeatures),
+          repeats:chosen.map(x=>sequenceTrace(x.s.x))
+        }
       };
 
       repeated.push(match);
@@ -426,7 +444,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       distance:best ? best.distance : closest ? closest.distance : 0,
       horizonMs:horizon,
       minMatches:CFG.seqMinMatches,
-      requiredOccurrences:CFG.seqMinOccurrences
+      requiredOccurrences:CFG.seqMinOccurrences,
+      chart:best ? best.chart : closest ? closest.chart : null
     };
 
     if (!best) return null;
@@ -1327,7 +1346,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       occurrences:0, length:0, direction:"", distance:0,
       horizonMs:CFG.entryTimeframeMs,
       minMatches:CFG.seqMinMatches,
-      requiredOccurrences:CFG.seqMinOccurrences
+      requiredOccurrences:CFG.seqMinOccurrences,
+      chart:null
     };
 
     if (seqAssetKey)
