@@ -1,3 +1,4 @@
+
 // PLEX v5.8 - Módulo 4: Interfaz Gráfica (UI/UX visual: chips, medidores y tarjetas, poco texto)
 window.PLEX_MOD = window.PLEX_MOD || {};
 
@@ -13,7 +14,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   const FONT = "system-ui,-apple-system,'Segoe UI',Roboto,sans-serif";
   const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-  // Iconos compactos por patrón (el color indica la dirección: verde sube, rojo baja, gris neutro)
   const PGLYPH = {
     NONE: "–", BRK_UP: "⇑", BRK_DN: "⇓", DBOT: "W", DTOP: "M",
     PULL_U: "↗", PULL_D: "↘", REJ_B: "⊥", REJ_T: "⊤",
@@ -35,7 +35,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     return e;
   };
 
-  // ---------- Piezas visuales reutilizables ----------
   const CARD = "background:#141c2a;border-radius:10px;padding:8px 10px";
   const ELL = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
   const chip = (txt, col) => `<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:#0f1724;border:1px solid rgba(255,255,255,.12);color:${col};font-size:10px;white-space:nowrap">${txt}</span>`;
@@ -48,7 +47,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     `<div style="color:${GREY};font-size:9px;margin-top:1px;padding:0 3px;${ELL}">${l}</div></div>`;
   const secT = (pn, t) => el("div", "margin:10px 0 4px;color:#9ab;font-weight:bold;font-size:11px", pn, t);
 
-  // ---------- Contenedor principal ----------
   const box = el("div", `position:fixed;left:${ui.x}px;top:${ui.y}px;z-index:2147483647;font:10px ${FONT};`);
   const head = el("div", "display:inline-block;background:rgba(0,0,0,.7);color:#cfe;padding:4px 7px;border-radius:8px;" +
     "touch-action:none;user-select:none;-webkit-user-select:none;line-height:1.3;border:1px solid rgba(255,255,255,.15)", box);
@@ -76,7 +74,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     panes.push(el("div", "", body));
   });
 
-  // ---------- Pestaña 1: Resumen ----------
   const stBar = el("div", "", panes[0]);
   const kpis = el("div", "display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:6px", panes[0]);
   const mkt = el("div", CARD + ";margin-top:6px", panes[0]);
@@ -98,7 +95,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   el("summary", "color:#9ab;padding:5px 0", detT, "🔧 Detalles técnicos");
   const stat = el("div", "margin-top:3px;white-space:pre-wrap;line-height:1.3;color:#9fc;font:10px monospace", detT);
 
-  // ---------- Pestaña 2: En vivo ----------
   const nowStatus = el("div", "", panes[1]);
   const nowGrid = el("div", "display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:6px", panes[1]);
   secT(panes[1], "🎯 Última entrada");
@@ -122,7 +118,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     renderFn();
   });
 
-  // ---------- Pestaña 3: Aprende ----------
   const seenTitle = secT(panes[2], "🧩 Patrones vistos");
   seenTitle.style.marginTop = "2px";
   const seenBox = el("div", "display:grid;grid-template-columns:repeat(6,1fr);gap:3px", panes[2]);
@@ -131,7 +126,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   const tbl = el("div", "", panes[2]);
   const legDet = el("details", "margin-top:6px", panes[2]);
   el("summary", `color:${GREY};font-size:10px;padding:3px 0`, legDet, "Leyenda");
-  const legend = el("div", "color:#789;font-size:10px;line-height:1.5;white-space:pre-line", legDet,
+  el("div", "color:#789;font-size:10px;line-height:1.5;white-space:pre-line", legDet,
     "✅ Seguir · 🔄 Invertir · ⛔ Evitar · ⏳ Pocos datos · │ mínimo\n🔺 Triángulo · 🔀 Cruce · 🧩 Patrón · 👤 Tú");
   let seenHtml = "", seenInfoHtml = "", tblHtml = "";
 
@@ -144,7 +139,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     renderFn();
   });
 
-  // ---------- Pestaña 4: Ajustes ----------
   const btns = el("div", "display:grid;grid-template-columns:1fr 1fr;gap:5px", panes[3]);
   const mkSec = t => el("div", `grid-column:1/-1;color:${GREY};font-size:10px;margin-top:4px`, btns, t);
   const mk = (txt, fn) => {
@@ -191,7 +185,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   }
 
   function fitBody() {
-    // Nunca llega a los botones Baja/Sube (≈70% de la pantalla) ni al borde inferior
     const room = window.innerHeight - box.offsetTop - head.offsetHeight - 14;
     const safe = window.innerHeight * 0.70 - box.offsetTop - head.offsetHeight;
     body.style.maxHeight = Math.max(160, Math.min(room, safe)) + "px";
@@ -231,7 +224,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   attach();
   document.addEventListener("DOMContentLoaded", attach);
 
-  // ---------- Gráficas ----------
   function drawBars(S, bars, curBar) {
     const g = cvBars.getContext("2d"), W = cvBars.width, H = cvBars.height;
     g.clearRect(0, 0, W, H);
@@ -279,7 +271,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     g.stroke(); g.lineWidth = 1;
   }
 
-  // ---------- Cabecera compacta ----------
   function paintHeader(demo, o, zzHead, tradeCount, lastTradeShort, rlTagStr, lastSay) {
     try {
       const P = "display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;white-space:nowrap;";
@@ -296,7 +287,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     } catch (e) {}
   }
 
-  // ---------- Dashboard ----------
   function statusOf(d, rl, p) {
     if (!CFG.rl) return { ic: "⚪", t: "Aprendizaje apagado", c: "#9ab", bg: "#1b2433" };
     if (p == null) return { ic: "🔴", t: "Sin precio todavía", c: RED, bg: "#3a1a1a" };
@@ -339,7 +329,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
             chip(trendTxt, trendCol) + chip("Zona " + POSN2[S.pos], "#9ab") +
             (S.pat !== "NONE" ? chip(`${pGlyph(S.pat)} ${esc(PATN[S.pat] || S.pat)}`, pCol(S.pat)) : "") + `</div>`;
 
-          // Medidor de confluencia de acción del precio
           const bias = S.bias || 0, bc = Math.max(-4, Math.min(4, bias));
           const mcol = bias >= 2 ? GREEN : bias <= -2 ? RED : AMBER;
           const mtxt = bias >= 2 ? "Alcista" : bias <= -2 ? "Bajista" : "Neutral";
@@ -418,7 +407,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
           if (fh !== feedHtml) { feedHtml = fh; feed.innerHTML = fh; }
 
         } else if (tab === 2) {
-          // --- Patrones vistos: cuadrícula de iconos con contador ---
           const sk = Object.keys(rl.seen).sort((a, c) => rl.seen[c] - rl.seen[a]);
           seenTitle.textContent = "🧩 Patrones vistos" + (sk.length ? ` (${sk.length})` : "");
           const sh = sk.length
@@ -439,7 +427,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
             : "👆 Toca un icono para ver qué significa";
           if (ih !== seenInfoHtml) { seenInfoHtml = ih; seenInfo.innerHTML = ih; }
 
-          // --- Rendimiento: una fila por contexto ---
           const rows = Object.keys(rl.Q).filter(k => k.split("|").length >= 2 && rl.Q[k].N > 0)
             .sort((a, c) => rl.Q[c].N - rl.Q[a].N).slice(0, 10);
           const th = rows.length ? rows.map(k => {
