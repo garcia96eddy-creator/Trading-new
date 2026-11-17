@@ -156,7 +156,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   cvMotif.height=84;
   el(
     "div",`color:${GREY};font-size:9px;margin-top:3px`,motifCard,
-    "Movimiento normalizado · actual (verde/rojo) · repeticiones (azul/violeta)"
+    "Velas normalizadas · actual (verde/rojo) · repeticiones (azul/violeta)"
   );
   const chartCard=el("div",CARD+";margin-top:6px;padding:6px",panes[0]);
   const cvBars=el("canvas","width:100%;height:72px;border-radius:6px;display:block",chartCard);
@@ -549,22 +549,24 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     }
 
     const repeats=Array.isArray(chart.repeats)?chart.repeats:[];
-    const currentColor=v.direction==="HIGHER"?GREEN:
-      v.direction==="LOWER"?RED:AMBER;
-    const lines=[
-      {values:chart.current,color:currentColor,width:2.2},
-      ...repeats.slice(0,2).map((values,i)=>({
-        values,
+    const validCandles=candles=>
+      Array.isArray(candles)&&
+      candles.length===chart.current.length&&
+      candles.every(c=>
+        c&&Number.isFinite(c.o)&&Number.isFinite(c.h)&&
+        Number.isFinite(c.l)&&Number.isFinite(c.c)&&
+        c.h>=Math.max(c.o,c.c)&&c.l<=Math.min(c.o,c.c)
+      );
+    const current=validCandles(chart.current)?chart.current:null;
+    const history=repeats.slice(0,2)
+      .filter(validCandles)
+      .map((candles,i)=>({
+        candles,
         color:i===0?"#58a6ff":"#b58cff",
-        width:1.2
-      }))
-    ].filter(line =>
-      Array.isArray(line.values)&&
-      line.values.length===chart.current.length&&
-      line.values.every(Number.isFinite)
-    );
+        offset:i===0?-1.5:1.5
+      }));
 
-    if(!lines.length){
+    if(!current){
       motifHead.textContent="Motivo repetido: datos incompletos";
       return;
     }
@@ -575,44 +577,58 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         ? ` · ${v.direction==="HIGHER"?"sesgo alcista":"sesgo bajista"}`
         : " · sin dirección común");
 
-    const values=[];
-    lines.forEach(line=>line.values.forEach(value=>values.push(value)));
+    const candles=[current,...history.map(item=>item.candles)];
+    const values=candles.flatMap(series=>
+      series.flatMap(c=>[c.l,c.h])
+    );
     let min=Math.min(0,...values),max=Math.max(0,...values);
     if(max===min){max+=1;min-=1;}
 
     const padX=8,padY=9;
-    const x=i=>padX+i/(chart.current.length-1)*(W-2*padX);
+    const x=i=>padX+(i+0.5)/current.length*(W-2*padX);
     const y=value=>H-padY-(value-min)/(max-min)*(H-2*padY);
+    const candleWidth=Math.max(3,Math.min(8,(W-2*padX)/current.length*0.42));
 
     g.strokeStyle="#334155";
     g.lineWidth=1;
+    g.setLineDash([2,3]);
     g.beginPath();
     g.moveTo(padX,y(0));
     g.lineTo(W-padX,y(0));
     g.stroke();
-
-    lines.slice(1).forEach(line=>{
-      g.strokeStyle=line.color;
-      g.lineWidth=line.width;
-      g.setLineDash([3,3]);
-      g.beginPath();
-      line.values.forEach((value,i)=>{
-        if(i)g.lineTo(x(i),y(value));
-        else g.moveTo(x(i),y(value));
-      });
-      g.stroke();
-    });
-
-    const current=lines[0];
     g.setLineDash([]);
-    g.strokeStyle=current.color;
-    g.lineWidth=current.width;
-    g.beginPath();
-    current.values.forEach((value,i)=>{
-      if(i)g.lineTo(x(i),y(value));
-      else g.moveTo(x(i),y(value));
+
+    history.forEach(series=>{
+      g.globalAlpha=0.8;
+      g.strokeStyle=series.color;
+      g.lineWidth=1;
+      series.candles.forEach((c,i)=>{
+        const cx=x(i)+series.offset;
+        const yo=y(c.o),yc=y(c.c);
+        const top=Math.min(yo,yc);
+        const height=Math.max(1.5,Math.abs(yc-yo));
+        g.beginPath();
+        g.moveTo(cx,y(c.h));
+        g.lineTo(cx,y(c.l));
+        g.stroke();
+        g.strokeRect(cx-candleWidth/2,top,candleWidth,height);
+      });
     });
-    g.stroke();
+
+    g.globalAlpha=1;
+    current.forEach((c,i)=>{
+      const cx=x(i),yo=y(c.o),yc=y(c.c);
+      const top=Math.min(yo,yc);
+      const height=Math.max(1.5,Math.abs(yc-yo));
+      const color=c.c>=c.o?GREEN:RED;
+      g.strokeStyle=color;
+      g.fillStyle=color;
+      g.beginPath();
+      g.moveTo(cx,y(c.h));
+      g.lineTo(cx,y(c.l));
+      g.stroke();
+      g.fillRect(cx-candleWidth/2,top,candleWidth,height);
+    });
     g.lineWidth=1;
   }
 
@@ -1009,12 +1025,13 @@ window.PLEX_MOD = window.PLEX_MOD || {};
             rows.map(k=>{
               const parts=k.split("|");
               const sc=parts[0],pt=parts[1],e=rl.Q[k];
-              const w=e.W/e.N;
+              const n=e.recentN||e.N;
+              const w=e.recentN?e.recentW/e.recentN:e.W/e.N;
 
               let col,icon;
               const us=sc==="USR";
 
-              if(e.N<(us?CFG.usrMinN:CFG.rlMinN)){
+              if(n<(us?CFG.usrMinN:CFG.rlMinN)){
                 col="#789";icon="⏳";
               }else if(w>b){
                 col=GREEN;icon="✅";
@@ -1034,8 +1051,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
                 `<div style="position:relative;flex:none;width:36px;height:4px;background:#1b2433;border-radius:3px">`+
                 `<div style="width:${(w*100).toFixed(0)}%;height:100%;background:${col};border-radius:3px"></div>`+
                 `<div style="position:absolute;left:${(b*100).toFixed(1)}%;top:-2px;width:1px;height:8px;background:#fff"></div></div>`+
-                `<b style="flex:none;width:26px;text-align:right;color:${col}">${(w*100).toFixed(0)}%</b>`+
-                `<span style="flex:none;width:28px;text-align:right;color:#8aa">${e.N}</span></div>`;
+                `<b style="flex:none;width:26px;text-align:right;color:${col}" title="Acierto reciente">${(w*100).toFixed(0)}%</b>`+
+                `<span style="flex:none;width:28px;text-align:right;color:#8aa" title="${e.N} casos totales">${n}</span></div>`;
             }).join("")
             :`<div style="color:#789;font-size:11px">📚 Aún sin datos. Opera o deja correr PLEX.</div>`;
 

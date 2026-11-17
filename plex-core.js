@@ -466,7 +466,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       const e = d.k ? rl.Q[d.k] : null;
 
       if (e && e.N) {
-        stat = `${Math.round(100 * e.W / e.N)}% de acierto ${from === "Lo aprendido" ? "si se sigue" : "en tus entradas de este contexto"} (${e.N} casos; mínimo ${(be() * 100).toFixed(1)}%)`;
+        const n=e.recentN || e.N;
+        const winRate=e.recentN ? e.recentW/e.recentN : e.W/e.N;
+        stat = `${Math.round(100 * winRate)}% de acierto reciente ${from === "Lo aprendido" ? "si se sigue" : "en tus entradas de este contexto"} (${n} casos; mínimo ${(be() * 100).toFixed(1)}%)`;
       }
 
       rlLast = `RL ${isPat ? patName : src} ${dirWord(dir)}: ${d.a}${d.k ? " [" + d.k + "]" : ""}${from === "Lo aprendido" ? "" : " (tú)"}`;
@@ -531,7 +533,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       : `sin ${CFG.rlMinN} resultados válidos del contexto`;
 
     why.lines.push(
-      `Acierto histórico estimado para esta dirección: ${probabilityText}.`
+      `Acierto reciente estimado para esta dirección: ${probabilityText}.`
     );
     why.lines.push(
       "Se envía una entrada por señal, con el monto configurado en la plataforma; no se modifica. La estimación no garantiza el resultado."
