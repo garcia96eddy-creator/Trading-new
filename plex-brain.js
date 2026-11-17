@@ -330,16 +330,30 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     return Math.sqrt(sum/size);
   }
 
-  function sequenceTrace(features) {
-    const trace=[0];
-    let value=0;
+  function sequenceCandles(features) {
+    if (!Array.isArray(features) || features.length%4!==0)
+      return null;
+
+    const candles=[];
+    let closePath=0;
 
     for (let i=0; i<features.length; i+=4) {
-      value+=features[i];
-      trace.push(value);
+      const range=Math.exp(features[i+1]);
+      const close=closePath+features[i]*0.5;
+      const open=close-features[i+2]*range;
+      const low=close-((features[i+3]+1)/2)*range;
+      const high=low+range;
+
+      candles.push({
+        o:open,
+        h:Math.max(high,open,close),
+        l:Math.min(low,open,close),
+        c:close
+      });
+      closePath=close;
     }
 
-    return trace;
+    return candles;
   }
 
   function sequenceStep(B,current,p,horizonMs,say) {
@@ -396,8 +410,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         matches:chosen.length,
         distance:chosen.reduce((sum,x)=>sum+x.d,0)/chosen.length,
         chart:{
-          current:sequenceTrace(currentFeatures),
-          repeats:chosen.map(x=>sequenceTrace(x.s.x))
+          current:sequenceCandles(currentFeatures),
+          repeats:chosen.map(x=>sequenceCandles(x.s.x))
         }
       };
 
@@ -782,22 +796,23 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       act.BRK_DN=1;
     }
 
-    // Barridos intrabar solo si se desactiva el filtro de vela cerrada.
-    if (
-      CFG.strategyRequireClosedBar === false &&
-      lastH &&
-      cb.h>lastH.p+0.08*atr &&
-      p<lastH.p-0.02*atr
-    )
-      act.ST_SWEEP_H=1;
+    if (CFG.strategyRequireClosedBar) {
+      if (lastH && last.h>lastH.p+0.08*atr &&
+          last.c<lastH.p-0.02*atr)
+        act.ST_SWEEP_H=1;
 
-    if (
-      CFG.strategyRequireClosedBar === false &&
-      lastL &&
-      cb.l<lastL.p-0.08*atr &&
-      p>lastL.p+0.02*atr
-    )
-      act.ST_SWEEP_L=1;
+      if (lastL && last.l<lastL.p-0.08*atr &&
+          last.c>lastL.p+0.02*atr)
+        act.ST_SWEEP_L=1;
+    } else {
+      if (lastH && cb.h>lastH.p+0.08*atr &&
+          p<lastH.p-0.02*atr)
+        act.ST_SWEEP_H=1;
+
+      if (lastL && cb.l<lastL.p-0.08*atr &&
+          p>lastL.p+0.02*atr)
+        act.ST_SWEEP_L=1;
+    }
 
     // Retesteos posteriores a la ruptura.
     if (structBreak && now-structBreak.t<=90000) {
@@ -1064,7 +1079,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         trend:structTrend,
         sequence:seqUp ? "HH/HL" : seqDown ? "LH/LL" : "R",
         event:structEvent,
-        bias:structBias+structDir,
+        // El evento confirmado pesa más que la tendencia aislada.
+        bias:2*structDir+structBias,
         lastHigh:lastH ? lastH.p : 0,
         lastLow:lastL ? lastL.p : 0
       }
@@ -1081,7 +1097,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     f:{n:0,m:0,v:0},
     x:{n:0,m:0,v:0},
     W:0,
-    N:0
+    N:0,
+    recentW:0,
+    recentN:0
   });
 
   function upd(st,r) {
@@ -1091,9 +1109,29 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     st.v+=a*(d*(r-st.m)-st.v);
   }
 
-  const lcb=st=>st.n>0
-    ? st.m-CFG.rlZ*Math.sqrt(Math.max(st.v,1e-6)/st.n)
-    : -Infinity;
+  const lcb=st=>{
+    const n=Math.min(st.n,CFG.rlCap);
+    return n>0
+      ? st.m-CFG.rlZ*Math.sqrt(Math.max(st.v,1e-6)/n)
+      : -Infinity;
+  };
+
+  function updateHits(e,win) {
+    if (!Number.isFinite(e.recentN) || !Number.isFinite(e.recentW)) {
+      e.recentN=Math.min(Number(e.N)||0,CFG.rlCap);
+      e.recentW=e.N ? (e.W/e.N)*e.recentN : 0;
+    }
+
+    if (e.recentN<CFG.rlCap) {
+      e.recentN++;
+      if (win) e.recentW++;
+    } else {
+      e.recentW+=(win ? 1:0)-e.recentW/e.recentN;
+    }
+
+    e.N=(Number(e.N)||0)+1;
+    if (win) e.W=(Number(e.W)||0)+1;
+  }
 
   function confOf(dir) {
     const a=(S.bias||0)*(dir==="HIGHER" ? 1 : -1);
@@ -1149,11 +1187,12 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     for (const k of keysFor(src,dir,patName)) {
       const e=rl.Q[k];
 
-      if (e && e.N>=CFG.rlMinN) {
+      const recentN=e && (e.recentN || e.N);
+      if (e && recentN>=CFG.rlMinN) {
         return {
           key:k,
-          n:e.N,
-          p:e.W/e.N,
+          n:recentN,
+          p:e.recentN ? e.recentW/e.recentN : e.W/e.N,
           lcb:lcb(e.f)
         };
       }
@@ -1212,10 +1251,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
           upd(e.f,rF);
           upd(e.x,rX);
 
-          if (!tie) {
-            e.N++;
-            if (win) e.W++;
-          }
+          if (!tie) updateHits(e,win);
         }
 
         if (!tie) {
@@ -1259,10 +1295,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         upd(e.f,rF);
         upd(e.x,rX);
 
-        if (!tie) {
-          e.N++;
-          if (win) e.W++;
-        }
+        if (!tie) updateHits(e,win);
       }
 
       rl.total++;

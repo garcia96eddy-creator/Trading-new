@@ -60,13 +60,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     // Aprendizaje por refuerzo
     rl: true,
-    rlMode: "gate",
-    rlWarmup: 60,
-    rlMinN: 15,
+    rlMinN: 8,
     usrMinN: 8,
-    rlZ: 1.8,
+    rlZ: 1.2,
     rlMinEdge: 0,
-    rlCap: 300,
+    rlCap: 60,
     payout: 0.87,
     priceStaleMs: 4000,
 
