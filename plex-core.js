@@ -29,7 +29,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   const sess = {
     t0: Date.now(), signals: 0, trades: 0, win: 0, loss: 0,
-    skipRL: 0, skipOpp: 0, skipPause: 0, bySrc: {}
+    skipOpp: 0, skipPause: 0, bySrc: {}
   };
 
   function say(icon, text, key) {
@@ -460,11 +460,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       ? brain.recordSample(curPrice(), expiryBase(), src, dir, keys, patName, false)
       : null;
 
-    if (isPat && !(ready && CFG.rlMode === "gate")) {
-      lastEvent = `${label}: patrón en modo de aprendizaje`;
-      return null;
-    }
-
     if (isSeq) {
       mode = "model";
     } else if (ready && CFG.rlMode === "gate" &&
@@ -492,31 +487,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
       rlLast = `RL ${isPat ? patName : src} ${dirWord(dir)}: ${d.a}${d.k ? " [" + d.k + "]" : ""}${from === "Lo aprendido" ? "" : " (tú)"}`;
 
-      if (isPat) {
-        if (d.a !== "FOLLOW" && d.a !== "FADE") {
-          lastEvent = `${label}: falta evidencia de aprendizaje`;
-          say("📚", `${label}: aún sin evidencia suficiente, solo aprende`, "learn" + label);
-          return null;
-        }
-      } else if (d.a === "SKIP" ||
-        (d.a === "UNK" && CFG.rlUnknown === "skip")) {
-        sess.skipRL++;
-        lastEvent = `RL omite ${src} ${dirWord(dir)}`;
-
-        say(
-          "⏭",
-          `Omitida ${label}: ` +
-          (d.a === "SKIP"
-            ? `lo aprendido no la respalda (${stat})`
-            : "aún no hay datos suficientes de este contexto"),
-          "skip" + label + dir
-        );
-
-        return null;
-      }
-
       mode = d.a === "FADE" ? "fade" :
-        d.a === "FOLLOW" ? "follow" : "unk";
+        d.a === "FOLLOW" ? "follow" :
+        d.a === "SKIP" ? "advisory" : "unk";
 
       if (d.a === "FADE")
         fd = opposite(dir);
@@ -531,8 +504,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       mode === "model" ? "La similitud y su límite estadístico respaldan la dirección" :
       mode === "follow" ? `${from}: ${stat} → la sigo` :
       mode === "fade" ? `${from}: ${stat}; rinde más al revés → entro ${dirWord(fd)}` :
-      mode === "warm" ? `Aún aprendiendo (${rl.total}/${CFG.rlWarmup}): opero la señal sin filtro` :
-      mode === "unk" ? "Contexto nuevo: opero la señal sin filtro" :
+      mode === "advisory" ? `${from}: ${stat}; es solo una advertencia, no bloquea la señal` :
+      mode === "warm" ? `Aún aprendiendo (${rl.total}/${CFG.rlWarmup}): el aprendizaje es solo referencia, no bloquea la señal` :
+      mode === "unk" ? "Contexto nuevo o sin evidencia suficiente: el aprendizaje no bloquea la señal" :
       mode === "noprice" ? "Sin precio todavía: opero sin filtro" :
       "Modo aprendizaje: opero la señal sin filtro";
 
