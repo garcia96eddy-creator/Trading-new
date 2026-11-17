@@ -41,8 +41,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     seqWindowBars: 30,
     seqMinLength: 3,
     seqMaxLength: 10,
-    seqMinMatches: 2,
-    seqMinOccurrences: 3,
+    seqMinMatches: 1,
+    seqMinOccurrences: 2,
     seqMaxDistance: 0.45,
     seqMaxSamples: 500,
 
