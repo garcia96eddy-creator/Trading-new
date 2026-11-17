@@ -29,7 +29,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   const sess = {
     t0: Date.now(), signals: 0, trades: 0, win: 0, loss: 0,
-    skipOpp: 0, skipPause: 0, bySrc: {}
+    skipProbability: 0, skipOpp: 0, skipPause: 0, bySrc: {}
   };
 
   function say(icon, text, key) {
@@ -441,6 +441,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     let mode = isSeq ? "model" : "free";
     let stat = "";
     let from = "Lo aprendido";
+    let learnedDirection = false;
     const ready = CFG.rl && curPrice() != null;
     const keys = brain.keysFor(src, dir, patName);
 
@@ -463,6 +464,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         }
       }
 
+      learnedDirection = d.a === "FOLLOW" || d.a === "FADE";
       const e = d.k ? rl.Q[d.k] : null;
 
       if (e && e.N) {
@@ -485,11 +487,23 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       mode = "noprice";
     }
 
+    const structureBias=Number(S.structure && S.structure.bias)||0;
+    const structureDir=structureBias>=2 ? "HIGHER" :
+      structureBias<=-2 ? "LOWER" : null;
+    let structureAligned=!!structureDir && structureDir===fd;
+
+    if (structureDir && !learnedDirection && structureDir!==fd) {
+      fd=structureDir;
+      mode="structure";
+      structureAligned=true;
+    }
+
     const decision =
       mode === "model" ? "La similitud y su límite estadístico respaldan la dirección" :
       mode === "follow" ? `${from}: ${stat} → la sigo` :
       mode === "fade" ? `${from}: ${stat}; rinde más al revés → entro ${dirWord(fd)}` :
-      mode === "advisory" ? `${from}: ${stat}; es solo una advertencia, no bloquea la señal` :
+      mode === "advisory" ? `${from}: ${stat}; la recomendación no decide por sí sola` :
+      mode === "structure" ? `Evento estructural confirmado: orientación ${dirWord(fd)}` :
       mode === "unk" ? "Contexto nuevo o sin evidencia suficiente: el aprendizaje no bloquea la señal" :
       mode === "noprice" ? "Sin precio todavía: opero sin filtro" :
       "Modo aprendizaje: opero la señal sin filtro";
@@ -524,9 +538,23 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       );
     }
 
-    const probabilityInfo = brain.probFor(src, dir, patName);
+    if (structureAligned) {
+      why.lines.push(
+        `Estructura confirma ${dirWord(fd)}: ${PATN[S.structure.event]||S.structure.event} · ${S.structure.sequence}.`
+      );
+    } else if (structureDir && learnedDirection && structureDir!==fd) {
+      why.lines.push(
+        `La estructura apunta ${dirWord(structureDir)}, pero prevalece la recomendación aprendida para este contexto.`
+      );
+    }
+
+    const probabilityInfo = brain.probFor(
+      from === "Tus operaciones" ? "USR" : src,
+      dir,
+      from === "Tus operaciones" && !isPat ? brain.ctxPat() : patName
+    );
     const executionProbability = probabilityInfo
-      ? mode === "fade" ? 1 - probabilityInfo.p : probabilityInfo.p
+      ? fd!==dir ? 1 - probabilityInfo.p : probabilityInfo.p
       : null;
     const probabilityText = probabilityInfo
       ? `${(executionProbability * 100).toFixed(1)}% (${probabilityInfo.n} casos)`
@@ -535,6 +563,24 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     why.lines.push(
       `Acierto reciente estimado para esta dirección: ${probabilityText}.`
     );
+
+    const probabilityFloor=be();
+    if (executionProbability!=null &&
+        executionProbability<probabilityFloor) {
+      const blockText=
+        `Entrada bloqueada: acierto reciente ${(executionProbability*100).toFixed(1)}% `+
+        `menor al equilibrio de ${(probabilityFloor*100).toFixed(1)}% `+
+        `(${probabilityInfo.n} casos).`;
+      why.lines.push(blockText);
+      why.result={icon:"⛔",text:blockText};
+      sess.skipProbability++;
+      lastWhy=why;
+      lastEvent=blockText;
+      say("⛔",blockText,"lowprob"+label+dir+Date.now());
+      paint();
+      return null;
+    }
+
     why.lines.push(
       "Se envía una entrada por señal, con el monto configurado en la plataforma; no se modifica. La estimación no garantiza el resultado."
     );

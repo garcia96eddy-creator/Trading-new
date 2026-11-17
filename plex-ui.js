@@ -905,7 +905,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
             ).join(" · ");
 
           h+=
-            `<br><span style="color:${GREY}">Omitidas: ${d.sess.skipOpp} por sentido · ${d.sess.skipPause} por pausa</span>`;
+            `<br><span style="color:${GREY}">Omitidas: ${d.sess.skipProbability} por probabilidad · ${d.sess.skipOpp} por sentido · ${d.sess.skipPause} por pausa</span>`;
 
           sumBox.innerHTML=h;
           stat.textContent=

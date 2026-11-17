@@ -796,22 +796,23 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       act.BRK_DN=1;
     }
 
-    // Barridos intrabar solo si se desactiva el filtro de vela cerrada.
-    if (
-      CFG.strategyRequireClosedBar === false &&
-      lastH &&
-      cb.h>lastH.p+0.08*atr &&
-      p<lastH.p-0.02*atr
-    )
-      act.ST_SWEEP_H=1;
+    if (CFG.strategyRequireClosedBar) {
+      if (lastH && last.h>lastH.p+0.08*atr &&
+          last.c<lastH.p-0.02*atr)
+        act.ST_SWEEP_H=1;
 
-    if (
-      CFG.strategyRequireClosedBar === false &&
-      lastL &&
-      cb.l<lastL.p-0.08*atr &&
-      p>lastL.p+0.02*atr
-    )
-      act.ST_SWEEP_L=1;
+      if (lastL && last.l<lastL.p-0.08*atr &&
+          last.c>lastL.p+0.02*atr)
+        act.ST_SWEEP_L=1;
+    } else {
+      if (lastH && cb.h>lastH.p+0.08*atr &&
+          p<lastH.p-0.02*atr)
+        act.ST_SWEEP_H=1;
+
+      if (lastL && cb.l<lastL.p-0.08*atr &&
+          p>lastL.p+0.02*atr)
+        act.ST_SWEEP_L=1;
+    }
 
     // Retesteos posteriores a la ruptura.
     if (structBreak && now-structBreak.t<=90000) {
@@ -1078,7 +1079,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         trend:structTrend,
         sequence:seqUp ? "HH/HL" : seqDown ? "LH/LL" : "R",
         event:structEvent,
-        bias:structBias+structDir,
+        // El evento confirmado pesa más que la tendencia aislada.
+        bias:2*structDir+structBias,
         lastHigh:lastH ? lastH.p : 0,
         lastLow:lastL ? lastL.p : 0
       }
