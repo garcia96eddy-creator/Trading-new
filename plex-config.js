@@ -67,7 +67,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     rlZ: 1.8,
     rlMinEdge: 0,
     rlCap: 300,
-    rlUnknown: "skip",
     payout: 0.87,
     priceStaleMs: 4000,
 
