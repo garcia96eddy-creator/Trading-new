@@ -156,7 +156,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   cvMotif.height=84;
   el(
     "div",`color:${GREY};font-size:9px;margin-top:3px`,motifCard,
-    "Velas normalizadas · actual (verde/rojo) · repeticiones (azul/violeta)"
+    "Velas en vivo · actual (verde/rojo) · candidatos históricos (azul/violeta)"
   );
   const chartCard=el("div",CARD+";margin-top:6px;padding:6px",panes[0]);
   const cvBars=el("canvas","width:100%;height:72px;border-radius:6px;display:block",chartCard);
@@ -541,10 +541,10 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     g.fillRect(0,0,W,H);
 
     if(!chart||!Array.isArray(chart.current)||chart.current.length<2){
-      motifHead.textContent="Motivo repetido: buscando coincidencias…";
+      motifHead.textContent="Buscando estructura en vivo…";
       g.fillStyle="#789";
       g.font="10px sans-serif";
-      g.fillText("Aún no hay tres apariciones comparables",8,42);
+      g.fillText("Esperando velas con movimiento para comparar",8,42);
       return;
     }
 
@@ -571,11 +571,15 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       return;
     }
 
-    motifHead.textContent=
-      `Motivo de ${v.length} velas · ${v.occurrences} apariciones`+
-      (v.direction
-        ? ` · ${v.direction==="HIGHER"?"sesgo alcista":"sesgo bajista"}`
-        : " · sin dirección común");
+    motifHead.textContent=v.status==="signal"
+      ? `Motivo de ${v.length} velas · ${v.occurrences} apariciones · `+
+        `${v.direction==="HIGHER"?"sesgo alcista":"sesgo bajista"}`
+      : v.status==="no-consensus"
+        ? `Estructura observada · ${v.occurrences} apariciones · sin dirección común`
+        : `Buscando en vivo · ${v.length} velas`+
+          (history.length
+            ? ` · candidato cercano ${v.distance.toFixed(2)}`
+            : " · aún sin antecedente");
 
     const candles=[current,...history.map(item=>item.candles)];
     const values=candles.flatMap(series=>
@@ -853,9 +857,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
             else if(v.status==="gap")
               status="Esperando velas continuas";
             else if(v.status==="warming")
-              status=`Formando ventana: ${v.bars}/30 velas cerradas`;
+              status=`Buscando en vivo · ventana ${v.bars}/30 velas cerradas`;
             else
-              status=`Buscando ${v.requiredOccurrences||3} apariciones similares`;
+              status=`Buscando motivo · candidato de ${v.length||"—"} velas`;
 
             meter.innerHTML+=
               `<div style="margin-top:7px;padding-top:6px;border-top:1px solid #29364a;font-size:10px;color:#9ab">`+

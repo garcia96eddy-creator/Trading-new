@@ -356,12 +356,36 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     return candles;
   }
 
-  function sequenceStep(B,current,p,horizonMs,say) {
-    if (!current || !Number.isFinite(p) ||
-        current.t===seqLastBarStart)
+  function sequenceCandlesFromBars(window) {
+    if (!Array.isArray(window) || !window.length)
+      return null;
+    if (!window.every(b=>
+      b&&Number.isFinite(b.o)&&Number.isFinite(b.h)&&
+      Number.isFinite(b.l)&&Number.isFinite(b.c)
+    ))
       return null;
 
-    seqLastBarStart = current.t;
+    const base=window[0].o;
+    const avgRange=window.reduce((sum,b)=>sum+Math.max(0,b.h-b.l),0)/window.length;
+    const scale=avgRange>0 ? avgRange : Math.max(Math.abs(base)*1e-8,1e-8);
+
+    if (!Number.isFinite(base) || !Number.isFinite(scale) || !(scale>0))
+      return null;
+
+    return window.map(b=>({
+      o:(b.o-base)/scale,
+      h:(b.h-base)/scale,
+      l:(b.l-base)/scale,
+      c:(b.c-base)/scale
+    }));
+  }
+
+  function sequenceStep(B,current,p,horizonMs,say) {
+    if (!current || !Number.isFinite(p))
+      return null;
+
+    const newBar=current.t!==seqLastBarStart;
+    if (newBar) seqLastBarStart=current.t;
 
     const horizon = Math.max(
       1000,Number(horizonMs)||Number(CFG.entryTimeframeMs)||30000
@@ -371,14 +395,66 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     const windowMs = CFG.seqWindowBars*timeframe;
     const currentEnd = B.length ? B[B.length-1].t : 0;
     const barsSeen = Math.min(B.length,CFG.seqWindowBars);
+    const liveBars=B.concat(current);
     const recentSamples = seqSamples.filter(s =>
       currentEnd-s.endBarStart>=0 &&
       currentEnd-s.endBarStart+(s.length-1)*timeframe<=windowMs
     );
     const predictions = [], repeated = [];
-    const maxLength = Math.min(CFG.seqMaxLength,B.length);
+    const liveCharts={};
+    let searchChart=null;
+    const maxLength = Math.min(CFG.seqMaxLength,liveBars.length);
+    const signalMaxLength = Math.min(CFG.seqMaxLength,B.length);
 
     for (let length=CFG.seqMinLength; length<=maxLength; length++) {
+      const liveWindow=liveBars.slice(-length);
+      const liveFeatures=sequenceFeatures(liveWindow);
+      const liveCandles=sequenceCandlesFromBars(liveWindow)||
+        (liveFeatures ? sequenceCandles(liveFeatures) : null);
+      if (!liveCandles) continue;
+
+      const visualCandidates=liveFeatures
+        ? recentSamples
+          .filter(s=>
+            s.length===length &&
+            current.t-s.endBarStart>=length*timeframe
+          )
+          .map(s=>({s,d:sequenceDistance(liveFeatures,s.x)}))
+          .sort((a,b)=>a.d-b.d)
+        : [];
+      const visualRepeats=[];
+
+      for (const candidate of visualCandidates) {
+        if (visualRepeats.every(x=>
+          Math.abs(x.s.endBarStart-candidate.s.endBarStart)>=length*timeframe
+        ))
+          visualRepeats.push(candidate);
+
+        if (visualRepeats.length>=2) break;
+      }
+
+      liveCharts[length]={
+        current:liveCandles,
+        repeats:visualRepeats.map(x=>
+          x.s.candles||sequenceCandles(x.s.x)
+        ).filter(Array.isArray)
+      };
+
+      const distance=visualRepeats.length
+        ? visualRepeats[0].d : Infinity;
+      if (!searchChart || distance<searchChart.distance ||
+          (!Number.isFinite(distance) &&
+            !Number.isFinite(searchChart.distance) &&
+            length>searchChart.length)) {
+        searchChart={
+          length,
+          distance,
+          chart:liveCharts[length]
+        };
+      }
+    }
+
+    for (let length=CFG.seqMinLength; length<=signalMaxLength; length++) {
       const currentFeatures=sequenceFeatures(B.slice(-length));
       if (!currentFeatures) continue;
 
@@ -409,9 +485,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         length,
         matches:chosen.length,
         distance:chosen.reduce((sum,x)=>sum+x.d,0)/chosen.length,
-        chart:{
+        chart:liveCharts[length]||{
           current:sequenceCandles(currentFeatures),
-          repeats:chosen.map(x=>sequenceCandles(x.s.x))
+          repeats:chosen.map(x=>x.s.candles||sequenceCandles(x.s.x))
         }
       };
 
@@ -432,37 +508,49 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       closest ? "no-consensus" :
       barsSeen<CFG.seqWindowBars ? "warming" : "searching";
 
-    for (let length=CFG.seqMinLength; length<=maxLength; length++) {
-      const features=sequenceFeatures(B.slice(-length));
-      if (!features) continue;
+    if (newBar) {
+      for (let length=CFG.seqMinLength; length<=signalMaxLength; length++) {
+        const closedWindow=B.slice(-length);
+        const features=sequenceFeatures(closedWindow);
+        if (!features) continue;
 
-      seqPending.push({
-        exp:performance.now()+horizon,
-        p0:p,
-        x:features,
-        length,
-        endBarStart:B[B.length-1].t
-      });
+        seqPending.push({
+          exp:performance.now()+horizon,
+          p0:p,
+          x:features,
+          candles:sequenceCandlesFromBars(closedWindow),
+          length,
+          endBarStart:B[B.length-1].t
+        });
+      }
     }
+
+    const displayMatch=best||closest;
+    const displayChartLength=displayMatch
+      ? displayMatch.length : searchChart ? searchChart.length : 0;
+    const chart=liveCharts[displayChartLength]||
+      searchChart&&searchChart.chart||null;
 
     seqState = {
       status,
       bars:barsSeen,
       samples:recentSamples.length,
-      matches:best ? best.matches : closest ? closest.matches : 0,
+      matches:displayMatch ? displayMatch.matches : 0,
       occurrences:best
         ? best.matches+1
         : closest ? closest.matches+1 : 0,
-      length:best ? best.length : closest ? closest.length : 0,
+      length:displayChartLength,
       direction:best ? best.direction : "",
-      distance:best ? best.distance : closest ? closest.distance : 0,
+      distance:displayMatch ? displayMatch.distance :
+        searchChart&&Number.isFinite(searchChart.distance)
+          ? searchChart.distance : 0,
       horizonMs:horizon,
       minMatches:CFG.seqMinMatches,
       requiredOccurrences:CFG.seqMinOccurrences,
-      chart:best ? best.chart : closest ? closest.chart : null
+      chart
     };
 
-    if (!best) return null;
+    if (!best || !newBar) return null;
 
     const name=best.direction==="HIGHER" ? "SEQ_UP":"SEQ_DN";
     say(
@@ -488,6 +576,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       const r=p1>s.p0 ? 1 : p1<s.p0 ? -1 : 0;
       seqSamples.push({
         x:s.x,
+        candles:s.candles,
         length:s.length,
         r,
         endBarStart:s.endBarStart,
