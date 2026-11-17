@@ -60,8 +60,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     // Aprendizaje por refuerzo
     rl: true,
-    rlMode: "gate",
-    rlWarmup: 60,
     rlMinN: 15,
     usrMinN: 8,
     rlZ: 1.8,

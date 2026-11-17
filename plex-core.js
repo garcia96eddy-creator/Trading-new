@@ -149,9 +149,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     const x = execStats();
     const usrTxt = rl.usr && rl.usr.n ? ` 👤${rl.usr.n}` : "";
 
-    return rl.total < CFG.rlWarmup
-      ? ` RL ${rl.total}/${CFG.rlWarmup}${usrTxt}`
-      : ` RL✓${x.win != null ? " " + Math.round(x.win * 100) + "%" : ""}${usrTxt}`;
+    return ` RL ${rl.total} muestras${x.win != null ? " · " + Math.round(x.win * 100) + "%" : ""}${usrTxt}`;
   }
 
   function paint() {
@@ -440,7 +438,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     );
 
     let fd = dir;
-    let mode = "free";
+    let mode = isSeq ? "model" : "free";
     let stat = "";
     let from = "Lo aprendido";
     const ready = CFG.rl && curPrice() != null;
@@ -450,11 +448,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       ? brain.recordSample(curPrice(), expiryBase(), src, dir, keys, patName, false)
       : null;
 
-    if (isSeq) {
-      mode = "model";
-    } else if (ready && CFG.rlMode === "gate" &&
-      (isPat || rl.total >= CFG.rlWarmup)) {
-
+    if (ready) {
       let d = brain.policy(isPat ? keys.slice(0, 3) : keys);
 
       if (d.a === "UNK") {
@@ -479,15 +473,14 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
       mode = d.a === "FADE" ? "fade" :
         d.a === "FOLLOW" ? "follow" :
-        d.a === "SKIP" ? "advisory" : "unk";
+        d.a === "SKIP" ? "advisory" :
+        d.a === "UNK" && isSeq ? "model" : "unk";
 
       if (d.a === "FADE")
         fd = opposite(dir);
 
     } else if (!ready) {
       mode = "noprice";
-    } else if (!isSeq && CFG.rlMode === "gate") {
-      mode = "warm";
     }
 
     const decision =
@@ -495,7 +488,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       mode === "follow" ? `${from}: ${stat} → la sigo` :
       mode === "fade" ? `${from}: ${stat}; rinde más al revés → entro ${dirWord(fd)}` :
       mode === "advisory" ? `${from}: ${stat}; es solo una advertencia, no bloquea la señal` :
-      mode === "warm" ? `Aún aprendiendo (${rl.total}/${CFG.rlWarmup}): el aprendizaje es solo referencia, no bloquea la señal` :
       mode === "unk" ? "Contexto nuevo o sin evidencia suficiente: el aprendizaje no bloquea la señal" :
       mode === "noprice" ? "Sin precio todavía: opero sin filtro" :
       "Modo aprendizaje: opero la señal sin filtro";

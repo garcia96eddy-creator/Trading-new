@@ -708,15 +708,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         c:AMBER,bg:"#3a2f12"
       };
 
-    if(rl.total<CFG.rlWarmup)
-      return {
-        ic:"🟡",t:`Aprendiendo ${rl.total}/${CFG.rlWarmup}`,
-        c:AMBER,bg:"#3a2f12",
-        pct:rl.total/CFG.rlWarmup
-      };
-
     return {
-      ic:"🟢",t:"Filtrando con lo aprendido",
+      ic:"🧠",t:`Aprendizaje activo como guía · ${rl.total} muestras`,
       c:GREEN,bg:"#12351f"
     };
   }
