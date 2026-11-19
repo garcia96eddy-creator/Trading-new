@@ -422,6 +422,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   function signal(src, dir, force, t0, patName) {
     const isPat = src === "PAT";
     const isSeq = src === "SEQ";
+    const isContinuation=isPat &&
+      (patName==="CONT_UP" || patName==="CONT_DN");
     const isRetest = isPat &&
       (patName === "SR_SUPPORT_3" || patName === "SR_RESISTANCE_3");
     const rl = brain.getRL();
@@ -498,7 +500,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       structureBias<=-2 ? "LOWER" : null;
     let structureAligned=!!structureDir && structureDir===fd;
 
-    if (structureDir && !learnedDirection && structureDir!==fd) {
+    if (structureDir && !learnedDirection && !isContinuation &&
+        structureDir!==fd) {
       fd=structureDir;
       mode="structure";
       structureAligned=true;
