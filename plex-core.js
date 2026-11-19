@@ -422,6 +422,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   function signal(src, dir, force, t0, patName) {
     const isPat = src === "PAT";
     const isSeq = src === "SEQ";
+    const isRetest = isPat &&
+      (patName === "SR_SUPPORT_3" || patName === "SR_RESISTANCE_3");
     const rl = brain.getRL();
     const { S, cdlNow } = brain.getState();
 
@@ -450,7 +452,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       : null;
 
     if (ready) {
-      let d = brain.policy(isPat ? keys.slice(0, 3) : keys);
+      const policyMinN=isRetest ? CFG.rlRetestMinN : CFG.rlMinN;
+      let d = brain.policy(
+        isPat ? keys.slice(0, 3) : keys,
+        policyMinN
+      );
 
       if (d.a === "UNK") {
         const u = brain.policy(
@@ -538,6 +544,12 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       );
     }
 
+    if (isRetest) {
+      why.lines.push(
+        `Este retesteo se reajusta con sus resultados; desde ${CFG.rlRetestMinN} casos recientes puede cambiar de dirección o bloquearse si queda bajo equilibrio.`
+      );
+    }
+
     if (structureAligned) {
       why.lines.push(
         `Estructura confirma ${dirWord(fd)}: ${PATN[S.structure.event]||S.structure.event} · ${S.structure.sequence}.`
@@ -551,7 +563,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     const probabilityInfo = brain.probFor(
       from === "Tus operaciones" ? "USR" : src,
       dir,
-      from === "Tus operaciones" && !isPat ? brain.ctxPat() : patName
+      from === "Tus operaciones" && !isPat ? brain.ctxPat() : patName,
+      isRetest ? CFG.rlRetestMinN : CFG.rlMinN
     );
     const executionProbability = probabilityInfo
       ? fd!==dir ? 1 - probabilityInfo.p : probabilityInfo.p
@@ -570,7 +583,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       const blockText=
         `Entrada bloqueada: acierto reciente ${(executionProbability*100).toFixed(1)}% `+
         `menor al equilibrio de ${(probabilityFloor*100).toFixed(1)}% `+
-        `(${probabilityInfo.n} casos).`;
+        `(${probabilityInfo.n} casos${isRetest ? ", aprendizaje de retesteo" : ""}).`;
       why.lines.push(blockText);
       why.result={icon:"⛔",text:blockText};
       sess.skipProbability++;

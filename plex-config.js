@@ -61,6 +61,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     // Aprendizaje por refuerzo
     rl: true,
     rlMinN: 8,
+    rlRetestMinN: 3,
     usrMinN: 8,
     rlZ: 1.2,
     rlMinEdge: 0,

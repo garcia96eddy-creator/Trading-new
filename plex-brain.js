@@ -1397,12 +1397,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     return {a:"UNK",k:""};
   }
 
-  function probFor(src,dir,patName) {
+  function probFor(src,dir,patName,mn=CFG.rlMinN) {
     for (const k of keysFor(src,dir,patName)) {
       const e=rl.Q[k];
-
       const recentN=e && (e.recentN || e.N);
-      if (e && recentN>=CFG.rlMinN) {
+      if (e && recentN>=mn) {
         return {
           key:k,
           n:recentN,
