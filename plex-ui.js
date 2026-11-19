@@ -97,6 +97,12 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     "background:linear-gradient(145deg,rgba(13,25,42,.97),rgba(8,13,24,.96));"+
     "border:1px solid rgba(117,190,255,.44);"+
     "box-shadow:0 8px 26px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.12)";
+  const headMobileStyle=
+    "display:flex;width:58px;height:58px;box-sizing:border-box;align-items:center;justify-content:center;"+
+    "padding:4px;border-radius:50%;touch-action:none;user-select:none;-webkit-user-select:none;"+
+    "color:#eaf6ff;background:linear-gradient(145deg,rgba(13,25,42,.97),rgba(8,13,24,.96));"+
+    "border:1px solid rgba(117,190,255,.5);"+
+    "box-shadow:0 5px 16px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.12)";
   const watchStyle=document.createElement("style");
   watchStyle.textContent=
     "@keyframes plexUiWatchPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.58;transform:scale(.82)}}";
@@ -395,16 +401,25 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     body.style.maxHeight=Math.max(160,Math.min(room,safe))+"px";
   }
 
-  window.addEventListener("resize",fitBody);
+  window.addEventListener("resize",()=>{
+    if(ui.open)fitBody();
+    else applyOpen();
+  });
 
   const applyOpen=()=>{
-    head.style.cssText=ui.open?headExpandedStyle:headCompactStyle;
+    head.style.cssText=ui.open
+      ? headExpandedStyle
+      : window.innerWidth<=600 ? headMobileStyle : headCompactStyle;
     body.style.display=ui.open?"block":"none";
     if(ui.open){
       fitBody();
       renderExpandedHeader();
       renderFn();
     }else{
+      ui.x=Math.max(0,Math.min(window.innerWidth-head.offsetWidth,ui.x));
+      ui.y=Math.max(0,Math.min(window.innerHeight-head.offsetHeight,ui.y));
+      box.style.left=ui.x+"px";
+      box.style.top=ui.y+"px";
       renderCompactHeader();
     }
   };
@@ -787,7 +802,21 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         : d.curPrice==null
           ? {text:"BUSCANDO PRECIO",color:AMBER}
           : {text:opened.length?"OPERACIÓN ABIERTA":"EN VIVO",color:GREEN};
-      const html=
+      head.title=
+        `${headerState.demo?"DEMO":"REAL"} · ${price} · ${trend.label} · `+
+        `acierto ${win} (${stats.n||0})`+
+        (opened.length?` · operación abierta ${seconds}s`:` · ${status.text}`);
+      const html=window.innerWidth<=600
+        ? `<div style="display:flex;height:100%;flex-direction:column;align-items:center;justify-content:center;gap:2px">`+
+          `<span style="display:flex;align-items:center;gap:3px;font-size:6px;color:${status.color};font-weight:bold">`+
+            `<i style="width:5px;height:5px;border-radius:50%;background:${status.color};animation:plexUiWatchPulse 1.8s ease-in-out infinite"></i>`+
+            `${headerState.demo?"DEMO":"REAL"}</span>`+
+          `<b style="font-size:17px;line-height:1;color:${trend.color}">${trend.icon}</b>`+
+          `<span style="font-size:8px;line-height:1;color:#dcecff">${price}</span>`+
+          `<span style="font-size:7px;line-height:1;color:${opened.length?status.color:winColor};font-weight:bold">`+
+            `${opened.length?`⏳${seconds}s`:`🎯${win}`}</span>`+
+        `</div>`
+        :
         `<div style="display:flex;align-items:center;gap:5px">`+
           `<span style="width:7px;height:7px;flex:none;border-radius:50%;background:${status.color};box-shadow:0 0 8px ${status.color};animation:plexUiWatchPulse 1.8s ease-in-out infinite"></span>`+
           `<b style="font-size:10px;letter-spacing:1.2px">PLEX</b>`+
