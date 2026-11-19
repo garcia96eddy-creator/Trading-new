@@ -168,7 +168,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   );
 
   el("div",`color:${GREY};font-size:9px;margin-top:3px`,chartCard,
-    "🟧 máximo · 🟦 mínimo");
+    "S soporte (verde) · R resistencia (rojo): entrada al 3er retesteo · 🟧 máximo · 🟦 mínimo");
 
   const plCard=el("div",CARD+";margin-top:6px;padding:6px 8px",panes[0]);
   const plHead=el(
@@ -474,6 +474,29 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     const rg=(hi-lo)||1e-6;
     const bw=W/N;
     const y=p=>H-8-(p-lo)/rg*(H-22);
+
+    const retests=S.retests||{};
+    const drawRetestLevel=(state,label,color)=>{
+      if(!state||!Number.isFinite(state.level)||state.level<lo||state.level>hi)
+        return;
+
+      const yy=y(state.level);
+      g.strokeStyle=color;
+      g.fillStyle=color;
+      g.lineWidth=1.5;
+      g.setLineDash([4,2]);
+      g.beginPath();
+      g.moveTo(0,yy);
+      g.lineTo(W,yy);
+      g.stroke();
+      g.setLineDash([]);
+      g.font="9px sans-serif";
+      g.fillText(`${label} ${Math.min(3,state.touches)}/3`,4,Math.max(9,yy-3));
+    };
+
+    drawRetestLevel(retests.resistance,"R",RED);
+    drawRetestLevel(retests.support,"S",GREEN);
+    g.lineWidth=1;
 
     g.setLineDash([3,3]);
 

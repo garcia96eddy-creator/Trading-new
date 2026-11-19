@@ -61,6 +61,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     // Aprendizaje por refuerzo
     rl: true,
     rlMinN: 8,
+    rlRetestMinN: 3,
     usrMinN: 8,
     rlZ: 1.2,
     rlMinEdge: 0,
@@ -120,6 +121,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_SWEEP_L: "HIGHER",
     ST_RET_U: "HIGHER",
     ST_RET_D: "LOWER",
+    SR_SUPPORT_3: "HIGHER",
+    SR_RESISTANCE_3: "LOWER",
 
   };
 
@@ -163,6 +166,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_SWEEP_L: "Barrido de liquidez inferior",
     ST_RET_U: "Retesteo alcista",
     ST_RET_D: "Retesteo bajista",
+    SR_SUPPORT_3: "Tercer rebote en soporte",
+    SR_RESISTANCE_3: "Tercer rechazo en resistencia",
     SEQ_UP: "Estructura variable repetida al alza",
     SEQ_DN: "Estructura variable repetida a la baja"
   };
@@ -202,6 +207,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_SWEEP_L: "El precio perforó un mínimo y recuperó.",
     ST_RET_U: "Retesteo de nivel roto al alza.",
     ST_RET_D: "Retesteo de nivel roto a la baja.",
+    SR_SUPPORT_3: "El precio confirmó su tercer rebote en el soporte.",
+    SR_RESISTANCE_3: "El precio confirmó su tercer rechazo en la resistencia.",
     SEQ_UP: "La secuencia variable de las últimas 30 velas se parece a secuencias previas que subieron antes de su vencimiento medido.",
     SEQ_DN: "La secuencia variable de las últimas 30 velas se parece a secuencias previas que bajaron antes de su vencimiento medido."
   };
