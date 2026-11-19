@@ -878,7 +878,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       const {curBar}=brain.getState();
       return {
         ic:"🪞",
-        t:`Replicando tu flow · vela ${Math.round(flow.phase*(curBar&&curBar.timeframe||60000)/1000)} s · cada ${Math.round(flow.intervalMs/1000)} s`,
+        t:`Flow activo · ${d.flowPending||0} señales · vela ${Math.round(flow.phase*(curBar&&curBar.timeframe||60000)/1000)} s · cada ${Math.round(flow.intervalMs/1000)} s`,
         c:GREEN,bg:"#12351f"
       };
     }
