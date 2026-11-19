@@ -123,6 +123,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_RET_D: "LOWER",
     SR_SUPPORT_3: "HIGHER",
     SR_RESISTANCE_3: "LOWER",
+    CONT_UP: "HIGHER",
+    CONT_DN: "LOWER",
 
   };
 
@@ -168,6 +170,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_RET_D: "Retesteo bajista",
     SR_SUPPORT_3: "Tercer rebote en soporte",
     SR_RESISTANCE_3: "Tercer rechazo en resistencia",
+    CONT_UP: "Continuación de tendencia alcista",
+    CONT_DN: "Continuación de tendencia bajista",
     SEQ_UP: "Estructura variable repetida al alza",
     SEQ_DN: "Estructura variable repetida a la baja"
   };
@@ -209,6 +213,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_RET_D: "Retesteo de nivel roto a la baja.",
     SR_SUPPORT_3: "El precio confirmó su tercer rebote en el soporte.",
     SR_RESISTANCE_3: "El precio confirmó su tercer rechazo en la resistencia.",
+    CONT_UP: "La tendencia alcista reanudó el avance después de un retroceso.",
+    CONT_DN: "La tendencia bajista reanudó la caída después de un rebote.",
     SEQ_UP: "La secuencia variable de las últimas 30 velas se parece a secuencias previas que subieron antes de su vencimiento medido.",
     SEQ_DN: "La secuencia variable de las últimas 30 velas se parece a secuencias previas que bajaron antes de su vencimiento medido."
   };

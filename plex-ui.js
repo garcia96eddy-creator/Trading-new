@@ -36,7 +36,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_BOS_U:"⬆", ST_BOS_D:"⬇",
     ST_CHOCH_U:"↗", ST_CHOCH_D:"↘",
     ST_SWEEP_H:"⌃", ST_SWEEP_L:"⌄",
-    ST_RET_U:"↻", ST_RET_D:"↺"
+    ST_RET_U:"↻", ST_RET_D:"↺",
+    CONT_UP:"↗", CONT_DN:"↘"
   };
 
   const SRC_ICON={

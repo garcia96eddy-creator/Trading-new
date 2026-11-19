@@ -16,6 +16,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_SWEEP_H:"LOWER", ST_SWEEP_L:"HIGHER",
     ST_RET_U:"HIGHER", ST_RET_D:"LOWER",
     SR_SUPPORT_3:"HIGHER", SR_RESISTANCE_3:"LOWER",
+    CONT_UP:"HIGHER", CONT_DN:"LOWER",
     SEQ_UP:"HIGHER", SEQ_DN:"LOWER"
   });
 
@@ -27,7 +28,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_SWEEP_H:"Barrido de máximo", ST_SWEEP_L:"Barrido de mínimo",
     ST_RET_U:"Retesteo alcista", ST_RET_D:"Retesteo bajista",
     SR_SUPPORT_3:"Tercer rebote en soporte",
-    SR_RESISTANCE_3:"Tercer rechazo en resistencia"
+    SR_RESISTANCE_3:"Tercer rechazo en resistencia",
+    CONT_UP:"Continuación de tendencia alcista",
+    CONT_DN:"Continuación de tendencia bajista"
   });
 
   Object.assign(PATD, {
@@ -44,7 +47,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_RET_U:"el precio retestea y sostiene el nivel roto al alza",
     ST_RET_D:"el precio retestea y rechaza el nivel roto a la baja",
     SR_SUPPORT_3:"el precio confirmó su tercer rebote en un soporte de un minuto",
-    SR_RESISTANCE_3:"el precio confirmó su tercer rechazo en una resistencia de un minuto"
+    SR_RESISTANCE_3:"el precio confirmó su tercer rechazo en una resistencia de un minuto",
+    CONT_UP:"la tendencia alcista reanuda el avance después de un retroceso",
+    CONT_DN:"la tendencia bajista reanuda la caída después de un rebote"
   });
 
   const RL_KEY = "iqtri_rl4";
@@ -85,6 +90,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   const patState = {}, patLast = {};
   let structBreak = null;
+  let continuationState={
+    direction:null,
+    pullbackBar:0,
+    lastSignalBar:0
+  };
   let retestState = {
     support:null,
     resistance:null,
@@ -95,6 +105,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     "ST_CHOCH_U","ST_CHOCH_D","ST_BOS_U","ST_BOS_D",
     "ST_SWEEP_H","ST_SWEEP_L","ST_RET_U","ST_RET_D",
     "SR_SUPPORT_3","SR_RESISTANCE_3",
+    "CONT_UP","CONT_DN",
     "BRK_UP","BRK_DN","DBOT","DTOP","PULL_U","PULL_D",
     "REJ_B","REJ_T","INS_UP","INS_DN","RET_UP","RET_DN",
     "LVL_B","LVL_T"
@@ -200,6 +211,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     structBreak = null;
     brk = null;
+    continuationState={direction:null,pullbackBar:0,lastSignalBar:0};
     retestState = {support:null,resistance:null,lastBar:0};
 
     S.structure = {
@@ -749,6 +761,43 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     };
   }
 
+  function updateContinuation(state,trend,last,curBar,p,emaValue,atr,lastH,lastL) {
+    if (trend!=="U" && trend!=="D") {
+      state.direction=null;
+      state.pullbackBar=0;
+      return null;
+    }
+
+    if (state.direction!==trend) {
+      state.direction=trend;
+      state.pullbackBar=0;
+      state.lastSignalBar=0;
+    }
+
+    const tolerance=0.25*atr;
+    const supportIntact=!lastL || last.l>lastL.p-0.1*atr;
+    const resistanceIntact=!lastH || last.h<lastH.p+0.1*atr;
+    const pullback=trend==="U"
+      ? last.c<last.o && last.l<=emaValue+tolerance && supportIntact
+      : last.c>last.o && last.h>=emaValue-tolerance && resistanceIntact;
+
+    if (pullback)
+      state.pullbackBar=last.t;
+
+    if (!state.pullbackBar || curBar.t<=state.pullbackBar ||
+        state.lastSignalBar===curBar.t)
+      return null;
+
+    const resumed=trend==="U"
+      ? p>last.h+0.05*atr && p>emaValue && curBar.c>curBar.o
+      : p<last.l-0.05*atr && p<emaValue && curBar.c<curBar.o;
+
+    if (!resumed) return null;
+
+    state.lastSignalBar=curBar.t;
+    return trend==="U" ? "CONT_UP":"CONT_DN";
+  }
+
   function detectCandles(B, atr, trend, pos) {
     const n = B.length;
     const c0 = B[n-1], c1 = B[n-2], c2 = B[n-3];
@@ -949,6 +998,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     const last=B[n-1], prv=B[n-2], cb=curBar;
     const lastH=swH.length ? swH[swH.length-1] : null;
     const lastL=swL.length ? swL[swL.length-1] : null;
+    const continuationSignal=updateContinuation(
+      continuationState,trend,last,cb,p,e9,atr,lastH,lastL
+    );
 
     if (brk) {
       brk.ext=Math.max(
@@ -960,6 +1012,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     }
 
     const act={};
+    if (continuationSignal)
+      act[continuationSignal]=1;
     const retests=updateRetests(last,swH,swL,p,atr);
 
     // Estructura HH/HL o LH/LL.
