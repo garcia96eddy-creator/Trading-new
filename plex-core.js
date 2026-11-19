@@ -15,6 +15,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   let lastTrade = 0, prev = null, lastEvent = "", avgMs = 0, tradeCount = 0;
   let crossInfo = "", zzHead = "ZZ –", lastTradeShort = "", fullText = "", rlLast = "";
   let flowMode=false,lastFlowAttemptBar=0;
+  const pendingFlowSignals=[];
 
   let openTrades = (loadCal("iqtri_open") || []).filter(o => o && o.until > Date.now());
 
@@ -421,8 +422,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         : (PATN[pn] || pn);
 
   function signal(src, dir, force, t0, patName) {
-    if(flowMode)return null;
-
     const isPat = src === "PAT";
     const isSeq = src === "SEQ";
     const isContinuation=isPat &&
@@ -443,6 +442,24 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       ((isPat || isSeq) && PATD[patName] ? `: ${PATD[patName]}` : ""),
       "sig" + label + dir
     );
+
+    if(flowMode){
+      const now=Date.now();
+      const {curBar}=brain.getState();
+      const key=`${src}|${patName||""}|${dir}|${curBar?curBar.t:0}`;
+      if(!pendingFlowSignals.some(s=>s.key===key)){
+        pendingFlowSignals.push({
+          key,src,dir,patName,
+          expiresAt:now+Math.max(1000,expiryBase())
+        });
+        if(pendingFlowSignals.length>60)
+          pendingFlowSignals.shift();
+      }
+
+      lastEvent=`Señal ${label} ${dirWord(dir)} · esperando tu flow`;
+      say("🪞",lastEvent,"flow-signal"+key);
+      return null;
+    }
 
     let fd = dir;
     let mode = isSeq ? "model" : "free";
@@ -628,6 +645,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   }
 
   function flowStep(flow,t0) {
+    if(!pendingFlowSignals.length)return;
+
     const {curBar}=brain.getState();
     if(!curBar || !Number.isFinite(curBar.t) ||
        !Number.isFinite(curBar.timeframe) || curBar.timeframe<=0 ||
@@ -635,6 +654,12 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       return;
 
     const now=Date.now();
+    for(let i=pendingFlowSignals.length-1;i>=0;i--){
+      if(pendingFlowSignals[i].expiresAt<=now)
+        pendingFlowSignals.splice(i,1);
+    }
+    if(!pendingFlowSignals.length)return;
+
     const elapsed=now-curBar.t;
     const phaseNow=((elapsed%curBar.timeframe)+curBar.timeframe)%curBar.timeframe;
     const targetPhase=flow.phase*curBar.timeframe;
@@ -646,25 +671,42 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       return;
 
     lastFlowAttemptBar=curBar.t;
-    sess.signals++;
-    rlLast=`FLOW usuario: ${dirWord(flow.direction)} · cada `+
+    const candidate=pendingFlowSignals[0];
+    const label=srcLabel(candidate.src,candidate.dir,candidate.patName);
+    rlLast=`Flow operativo: respeta la dirección de la señal · cada `+
       `${Math.round(flow.intervalMs/1000)} s · segundo `+
       `${Math.round(targetPhase/1000)} de vela`;
     const why={
       t:now,
-      dir:flow.direction,
-      title:`${dirWord(flow.direction)} por tu flow`,
+      dir:candidate.dir,
+      title:`${dirWord(candidate.dir)} por ${label}`,
       result:null,
       lines:[
-        `Replico tus últimas ${flow.entries} entradas manuales.`,
-        `Dirección habitual: ${dirWord(flow.direction)}.`,
+        `Señal vigente: ${label} → ${dirWord(candidate.dir)}.`,
+        `Conservo la dirección de la señal; el flow solo programa su ejecución.`,
         `Momento aprendido: segundo ${Math.round(targetPhase/1000)} de la vela de ${Math.round(curBar.timeframe/1000)} s.`,
         `Ritmo aprendido: una entrada cada ${Math.round(flow.intervalMs/1000)} s, aproximadamente.`,
-        "El análisis de señales y las pérdidas aprendidas no filtran este flow."
+        `La señal caduca en ${Math.max(0,Math.ceil((candidate.expiresAt-now)/1000))} s si no llega su turno.`
       ]
     };
-    const tr=doTrade(flow.direction,false,t0,"FLOW",why);
-    if(tr)brain.markUserFlowAction(now);
+    const keys=brain.keysFor("FLOW",candidate.dir,candidate.patName);
+    const tradeSrc=candidate.src==="PAT"
+      ? "PAT:"+candidate.patName
+      : "FLOW:"+candidate.src;
+    const entryPrice=curPrice();
+    const tr=doTrade(candidate.dir,false,t0,tradeSrc,why);
+    if(tr){
+      const smp=brain.recordSample(
+        entryPrice,expiryBase(),"FLOW",candidate.dir,keys,candidate.patName,false
+      );
+      if(smp){
+        smp.ex=candidate.dir;
+        smp.tr=tr;
+        smp.why=why;
+      }
+      pendingFlowSignals.shift();
+      brain.markUserFlowAction(now);
+    }
   }
 
   function userTrade(dir) {
@@ -809,6 +851,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     openTrades: pruneOpen(),
     isPaused: isPaused(),
     lastEvent,
+    flowPending:pendingFlowSignals.length,
     sess,
     fullText,
     rlLast,
