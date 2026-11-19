@@ -98,7 +98,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     "border:1px solid rgba(117,190,255,.44);"+
     "box-shadow:0 8px 26px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.12)";
   const headMobileStyle=
-    "display:block;width:148px;height:52px;box-sizing:border-box;padding:6px 9px;border-radius:16px;"+
+    "display:block;width:72px;height:72px;box-sizing:border-box;padding:6px;border-radius:14px;"+
     "touch-action:none;user-select:none;-webkit-user-select:none;line-height:1.1;color:#eaf6ff;"+
     "background:linear-gradient(145deg,rgba(13,25,42,.97),rgba(8,13,24,.96));"+
     "border:1px solid rgba(117,190,255,.5);"+
@@ -807,19 +807,20 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         `acierto ${win} (${stats.n||0})`+
         (opened.length?` · operación abierta ${seconds}s`:` · ${status.text}`);
       const html=window.innerWidth<=600
-        ? `<div style="display:flex;height:100%;flex-direction:column;justify-content:center;gap:5px">`+
-          `<div style="display:flex;align-items:center;justify-content:space-between;gap:5px;min-width:0">`+
-            `<span style="display:flex;align-items:center;gap:4px;min-width:0;color:${status.color};font-size:9px;font-weight:bold;white-space:nowrap">`+
-              `<i style="width:6px;height:6px;flex:none;border-radius:50%;background:${status.color};box-shadow:0 0 6px ${status.color};animation:plexUiWatchPulse 1.8s ease-in-out infinite"></i>`+
-              `${headerState.demo?"DEMO":"REAL"} #${headerState.tradeCount}</span>`+
-            `<span style="flex:none;padding:3px 5px;border-radius:9px;background:#111b2b;color:${trend.color};font-size:9px;font-weight:bold;white-space:nowrap">`+
-              `${trend.icon} ${trend.label}</span>`+
+        ? `<div style="display:flex;height:100%;min-width:0;flex-direction:column;align-items:center;justify-content:space-between;gap:1px">`+
+          `<div style="display:flex;width:100%;align-items:center;justify-content:space-between;gap:2px;font-size:8px;font-weight:bold;white-space:nowrap">`+
+            `<span style="display:flex;min-width:0;align-items:center;gap:3px;color:#cfe">`+
+              `<i style="width:5px;height:5px;flex:none;border-radius:50%;background:${status.color};box-shadow:0 0 5px ${status.color};animation:plexUiWatchPulse 1.8s ease-in-out infinite"></i>`+
+              `${headerState.demo?"DEMO":"REAL"}</span>`+
+            `<span style="color:#8aa">#${headerState.tradeCount}</span>`+
           `</div>`+
-          `<div style="display:flex;align-items:baseline;justify-content:space-between;gap:6px;min-width:0">`+
-            `<b style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;font-size:12px">${price}</b>`+
-            `<span style="flex:none;color:${opened.length?status.color:winColor};font-size:9px;font-weight:bold;white-space:nowrap">`+
-              `${opened.length?`${win} · ${seconds}s`:`🎯 ${win} (${stats.n||0})`}</span>`+
-          `</div>`+
+          `<span style="max-width:100%;padding:2px 4px;border-radius:8px;background:#111b2b;color:${trend.color};font-size:8px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">`+
+            `${trend.icon} ${trend.label}</span>`+
+          `<b style="max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;font-size:11px">${price}</b>`+
+          `<span style="max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${winColor};font-size:8px;font-weight:bold">`+
+            `🎯 ${win} (${stats.n||0})</span>`+
+          `<span style="max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${status.color};font-size:8px;font-weight:bold">`+
+            `${opened.length?`⏱ ${seconds}s`:status.text}</span>`+
         `</div>`
         :
         `<div style="display:flex;align-items:center;gap:5px">`+
