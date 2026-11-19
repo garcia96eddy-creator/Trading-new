@@ -15,6 +15,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_CHOCH_U:"HIGHER", ST_CHOCH_D:"LOWER",
     ST_SWEEP_H:"LOWER", ST_SWEEP_L:"HIGHER",
     ST_RET_U:"HIGHER", ST_RET_D:"LOWER",
+    SR_SUPPORT_3:"HIGHER", SR_RESISTANCE_3:"LOWER",
     SEQ_UP:"HIGHER", SEQ_DN:"LOWER"
   });
 
@@ -24,7 +25,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_BOS_U:"BOS alcista", ST_BOS_D:"BOS bajista",
     ST_CHOCH_U:"CHOCH alcista", ST_CHOCH_D:"CHOCH bajista",
     ST_SWEEP_H:"Barrido de máximo", ST_SWEEP_L:"Barrido de mínimo",
-    ST_RET_U:"Retesteo alcista", ST_RET_D:"Retesteo bajista"
+    ST_RET_U:"Retesteo alcista", ST_RET_D:"Retesteo bajista",
+    SR_SUPPORT_3:"Tercer rebote en soporte",
+    SR_RESISTANCE_3:"Tercer rechazo en resistencia"
   });
 
   Object.assign(PATD, {
@@ -39,7 +42,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ST_SWEEP_H:"la mecha supera un máximo y el precio vuelve debajo",
     ST_SWEEP_L:"la mecha pierde un mínimo y el precio vuelve encima",
     ST_RET_U:"el precio retestea y sostiene el nivel roto al alza",
-    ST_RET_D:"el precio retestea y rechaza el nivel roto a la baja"
+    ST_RET_D:"el precio retestea y rechaza el nivel roto a la baja",
+    SR_SUPPORT_3:"el precio confirmó su tercer rebote en un soporte de un minuto",
+    SR_RESISTANCE_3:"el precio confirmó su tercer rechazo en una resistencia de un minuto"
   });
 
   const RL_KEY = "iqtri_rl4";
@@ -70,6 +75,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   let S = {
     trend:"R", pos:"M", pat:"NONE", atr:0, swH:[], swL:[],
     bias:0, lvl:"N", lvlT:0, mom:0,
+    retests:{support:null,resistance:null},
     variablePattern:seqState,
     structure:{
       trend:"R", sequence:"R", event:"NONE",
@@ -79,10 +85,16 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   const patState = {}, patLast = {};
   let structBreak = null;
+  let retestState = {
+    support:null,
+    resistance:null,
+    lastBar:0
+  };
 
   const STRUCT = [
     "ST_CHOCH_U","ST_CHOCH_D","ST_BOS_U","ST_BOS_D",
     "ST_SWEEP_H","ST_SWEEP_L","ST_RET_U","ST_RET_D",
+    "SR_SUPPORT_3","SR_RESISTANCE_3",
     "BRK_UP","BRK_DN","DBOT","DTOP","PULL_U","PULL_D",
     "REJ_B","REJ_T","INS_UP","INS_DN","RET_UP","RET_DN",
     "LVL_B","LVL_T"
@@ -188,11 +200,13 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     structBreak = null;
     brk = null;
+    retestState = {support:null,resistance:null,lastBar:0};
 
     S.structure = {
       trend:"R", sequence:"R", event:"NONE",
       bias:0, lastHigh:0, lastLow:0
     };
+    S.retests={support:null,resistance:null};
 
     prevTrend = null;
     lastSwHp = 0;
@@ -637,6 +651,104 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     return best;
   }
 
+  function retestLevel(pivots, side, p, atr) {
+    const tol=0.35*atr;
+    const candidates=pivots.filter(s=>
+      Number.isFinite(s.p) &&
+      Math.abs(s.p-p)<=4*atr &&
+      (side==="support" ? s.p<=p+tol : s.p>=p-tol)
+    );
+    let best=null;
+
+    for (const seed of candidates) {
+      const cluster=candidates.filter(s=>Math.abs(s.p-seed.p)<=tol);
+      const level=cluster.reduce((sum,s)=>sum+s.p,0)/cluster.length;
+      const distance=Math.abs(p-level);
+
+      if (!best || distance<best.distance ||
+          (distance===best.distance && cluster.length>best.pivots)) {
+        best={level,distance,pivots:cluster.length};
+      }
+    }
+
+    return best;
+  }
+
+  function updateRetests(last, swH, swL, p, atr) {
+    const tolerance=0.25*atr;
+    const update=(key,side,candidate)=>{
+      let state=retestState[key];
+
+      if (!candidate) {
+        if (state && Math.abs(p-state.level)>1.5*atr)
+          retestState[key]=null;
+        return null;
+      }
+
+      if (!state || Math.abs(candidate.level-state.level)>tolerance) {
+        state={
+          level:candidate.level,
+          touches:0,
+          armed:true,
+          triggered:false,
+          lastTouchBar:0,
+          pivotTouches:candidate.pivots
+        };
+        retestState[key]=state;
+      }
+
+      state.pivotTouches=candidate.pivots;
+
+      if (last.t!==retestState.lastBar) {
+        const contact=last.l<=state.level+tolerance &&
+          last.h>=state.level-tolerance;
+        const bounce=side==="support"
+          ? last.c>state.level && last.c>last.o
+          : last.c<state.level && last.c<last.o;
+        const departed=side==="support"
+          ? last.l>state.level+tolerance
+          : last.h<state.level-tolerance;
+
+        if (departed) {
+          state.armed=true;
+        } else if (contact && bounce && state.armed &&
+                   state.lastTouchBar!==last.t) {
+          state.touches++;
+          state.lastTouchBar=last.t;
+          state.armed=false;
+          if (state.touches>=3 && !state.triggered) {
+            state.triggered=true;
+            return side==="support" ? "SR_SUPPORT_3":"SR_RESISTANCE_3";
+          }
+        }
+      }
+
+      return null;
+    };
+
+    if (retestState.lastBar===last.t) {
+      return {
+        signal:null,
+        support:retestState.support,
+        resistance:retestState.resistance
+      };
+    }
+
+    const supportSignal=update(
+      "support","support",retestLevel(swL,"support",p,atr)
+    );
+    const resistanceSignal=update(
+      "resistance","resistance",retestLevel(swH,"resistance",p,atr)
+    );
+    retestState.lastBar=last.t;
+
+    return {
+      signal:supportSignal||resistanceSignal,
+      support:retestState.support,
+      resistance:retestState.resistance
+    };
+  }
+
   function detectCandles(B, atr, trend, pos) {
     const n = B.length;
     const c0 = B[n-1], c1 = B[n-2], c2 = B[n-3];
@@ -729,6 +841,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       S = {
         trend:"R", pos:"M", pat:"NONE", atr:S.atr,
         swH:[], swL:[], bias:0, lvl:"N", lvlT:0, mom:0,
+        retests:retestState,
         variablePattern:seqState,
         structure:{
           trend:"R", sequence:"R", event:"NONE",
@@ -847,6 +960,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     }
 
     const act={};
+    const retests=updateRetests(last,swH,swL,p,atr);
 
     // Estructura HH/HL o LH/LL.
     const hPrev=swH.length>=2 ? swH[swH.length-2].p : 0;
@@ -1054,6 +1168,13 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       patState[nm]=!!act[nm];
     }
 
+    if (retests.signal) {
+      const nm=retests.signal;
+      patLast[nm]=now;
+      fired.push(nm);
+      seenInc(nm);
+    }
+
     if (last.t!==cdlBarT) {
       cdlBarT=last.t;
       const names=detectCandles(B,atr,trend,pos);
@@ -1163,6 +1284,10 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       lvl:lv ? lv.k : "N",
       lvlT:lv ? lv.t : 0,
       mom,
+      retests:{
+        support:retests.support,
+        resistance:retests.resistance
+      },
       variablePattern:seqState,
       structure:{
         trend:structTrend,
