@@ -507,12 +507,28 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       structureAligned=true;
     }
 
+    const userStyleInfo=ready
+      ? brain.userStyleFor(patName || brain.ctxPat())
+      : null;
+    if (userStyleInfo) {
+      fd=userStyleInfo.direction;
+      from="Tu estilo";
+      learnedDirection=true;
+      mode="userStyle";
+      stat=`dirección que elegiste en ${userStyleInfo.n} contextos similares`+
+        (userStyleInfo.p==null
+          ? ""
+          : ` · ${Math.round(userStyleInfo.p*100)}% de acierto en ${userStyleInfo.results} resultados`);
+      rlLast=`Perfil del usuario: ${dirWord(fd)} en ${userStyleInfo.n} contextos similares`;
+    }
+
     const decision =
       mode === "model" ? "La similitud y su límite estadístico respaldan la dirección" :
       mode === "follow" ? `${from}: ${stat} → la sigo` :
       mode === "fade" ? `${from}: ${stat}; rinde más al revés → entro ${dirWord(fd)}` :
       mode === "advisory" ? `${from}: ${stat}; la recomendación no decide por sí sola` :
       mode === "structure" ? `Evento estructural confirmado: orientación ${dirWord(fd)}` :
+      mode === "userStyle" ? `Imito tu dirección más usada en contextos similares: ${dirWord(fd)} (${stat})` :
       mode === "unk" ? "Contexto nuevo o sin evidencia suficiente: el aprendizaje no bloquea la señal" :
       mode === "noprice" ? "Sin precio todavía: opero sin filtro" :
       "Modo aprendizaje: opero la señal sin filtro";
@@ -563,14 +579,24 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       );
     }
 
-    const probabilityInfo = brain.probFor(
-      from === "Tus operaciones" ? "USR" : src,
-      dir,
-      from === "Tus operaciones" && !isPat ? brain.ctxPat() : patName,
-      isRetest ? CFG.rlRetestMinN : CFG.rlMinN
-    );
+    const probabilityInfo=userStyleInfo
+      ? userStyleInfo.p==null
+        ? null
+        : {
+          key:userStyleInfo.key,
+          n:userStyleInfo.results,
+          p:userStyleInfo.p
+        }
+      : brain.probFor(
+        from === "Tus operaciones" ? "USR" : src,
+        dir,
+        from === "Tus operaciones" && !isPat ? brain.ctxPat() : patName,
+        isRetest ? CFG.rlRetestMinN : CFG.rlMinN
+      );
     const executionProbability = probabilityInfo
-      ? fd!==dir ? 1 - probabilityInfo.p : probabilityInfo.p
+      ? userStyleInfo
+        ? probabilityInfo.p
+        : fd!==dir ? 1 - probabilityInfo.p : probabilityInfo.p
       : null;
     const probabilityText = probabilityInfo
       ? `${(executionProbability * 100).toFixed(1)}% (${probabilityInfo.n} casos)`

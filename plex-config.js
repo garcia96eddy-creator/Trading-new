@@ -63,6 +63,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     rlMinN: 8,
     rlRetestMinN: 3,
     usrMinN: 8,
+    userStyleMinN: 3,
     rlZ: 1.2,
     rlMinEdge: 0,
     rlCap: 60,
