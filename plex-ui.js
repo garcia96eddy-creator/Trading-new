@@ -807,14 +807,14 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         `acierto ${win} (${stats.n||0})`+
         (opened.length?` · operación abierta ${seconds}s`:` · ${status.text}`);
       const html=window.innerWidth<=600
-        ? `<div style="display:flex;height:100%;flex-direction:column;align-items:center;justify-content:center;gap:2px">`+
-          `<span style="display:flex;align-items:center;gap:3px;font-size:6px;color:${status.color};font-weight:bold">`+
-            `<i style="width:5px;height:5px;border-radius:50%;background:${status.color};animation:plexUiWatchPulse 1.8s ease-in-out infinite"></i>`+
-            `${headerState.demo?"DEMO":"REAL"}</span>`+
-          `<b style="font-size:17px;line-height:1;color:${trend.color}">${trend.icon}</b>`+
-          `<span style="font-size:8px;line-height:1;color:#dcecff">${price}</span>`+
-          `<span style="font-size:7px;line-height:1;color:${opened.length?status.color:winColor};font-weight:bold">`+
-            `${opened.length?`⏳${seconds}s`:`🎯${win}`}</span>`+
+        ? `<div style="display:flex;height:100%;flex-direction:column;align-items:center;justify-content:space-evenly;line-height:1">`+
+          `<span style="display:flex;align-items:center;gap:3px;font-size:8px;color:${status.color};font-weight:bold;white-space:nowrap">`+
+            `<i style="width:5px;height:5px;flex:none;border-radius:50%;background:${status.color};animation:plexUiWatchPulse 1.8s ease-in-out infinite"></i>`+
+            `${headerState.demo?"DEMO":"REAL"} #${headerState.tradeCount}</span>`+
+          `<b style="font-size:9px;color:${trend.color};white-space:nowrap">${trend.icon} ${trend.label==="ALCISTA"?"SUBE":trend.label==="BAJISTA"?"BAJA":"LATERAL"}</b>`+
+          `<span style="font-size:10px;font-weight:bold;color:#dcecff;white-space:nowrap">${price}</span>`+
+          `<span style="font-size:8.5px;color:${opened.length?status.color:winColor};font-weight:bold;white-space:nowrap">`+
+            `${opened.length?`${win} ⏳${seconds}s`:`🎯${win} (${stats.n||0})`}</span>`+
         `</div>`
         :
         `<div style="display:flex;align-items:center;gap:5px">`+
