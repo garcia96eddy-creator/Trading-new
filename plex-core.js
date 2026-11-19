@@ -14,6 +14,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   let lastTrade = 0, prev = null, lastEvent = "", avgMs = 0, tradeCount = 0;
   let crossInfo = "", zzHead = "ZZ –", lastTradeShort = "", fullText = "", rlLast = "";
+  let flowMode=false,lastFlowAttemptBar=0;
 
   let openTrades = (loadCal("iqtri_open") || []).filter(o => o && o.until > Date.now());
 
@@ -420,6 +421,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         : (PATN[pn] || pn);
 
   function signal(src, dir, force, t0, patName) {
+    if(flowMode)return null;
+
     const isPat = src === "PAT";
     const isSeq = src === "SEQ";
     const isContinuation=isPat &&
@@ -507,28 +510,12 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       structureAligned=true;
     }
 
-    const userStyleInfo=ready
-      ? brain.userStyleFor(patName || brain.ctxPat())
-      : null;
-    if (userStyleInfo) {
-      fd=userStyleInfo.direction;
-      from="Tu estilo";
-      learnedDirection=true;
-      mode="userStyle";
-      stat=`dirección que elegiste en ${userStyleInfo.n} contextos similares`+
-        (userStyleInfo.p==null
-          ? ""
-          : ` · ${Math.round(userStyleInfo.p*100)}% de acierto en ${userStyleInfo.results} resultados`);
-      rlLast=`Perfil del usuario: ${dirWord(fd)} en ${userStyleInfo.n} contextos similares`;
-    }
-
     const decision =
       mode === "model" ? "La similitud y su límite estadístico respaldan la dirección" :
       mode === "follow" ? `${from}: ${stat} → la sigo` :
       mode === "fade" ? `${from}: ${stat}; rinde más al revés → entro ${dirWord(fd)}` :
       mode === "advisory" ? `${from}: ${stat}; la recomendación no decide por sí sola` :
       mode === "structure" ? `Evento estructural confirmado: orientación ${dirWord(fd)}` :
-      mode === "userStyle" ? `Imito tu dirección más usada en contextos similares: ${dirWord(fd)} (${stat})` :
       mode === "unk" ? "Contexto nuevo o sin evidencia suficiente: el aprendizaje no bloquea la señal" :
       mode === "noprice" ? "Sin precio todavía: opero sin filtro" :
       "Modo aprendizaje: opero la señal sin filtro";
@@ -565,7 +552,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     if (isRetest) {
       why.lines.push(
-        `Este retesteo se reajusta con sus resultados; desde ${CFG.rlRetestMinN} casos recientes puede cambiar de dirección o bloquearse si queda bajo equilibrio.`
+        `Este retesteo aprende de sus resultados; `+
+        `desde ${CFG.rlRetestMinN} casos puede bloquear si queda bajo equilibrio.`
       );
     }
 
@@ -579,26 +567,16 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       );
     }
 
-    const probabilityInfo=userStyleInfo
-      ? userStyleInfo.p==null
-        ? null
-        : {
-          key:userStyleInfo.key,
-          n:userStyleInfo.results,
-          p:userStyleInfo.p
-        }
-      : brain.probFor(
+    const probabilityInfo=brain.probFor(
         from === "Tus operaciones" ? "USR" : src,
         dir,
         from === "Tus operaciones" && !isPat ? brain.ctxPat() : patName,
         isRetest ? CFG.rlRetestMinN : CFG.rlMinN
       );
     const executionProbability = probabilityInfo
-      ? userStyleInfo
-        ? probabilityInfo.p
-        : fd!==dir ? 1 - probabilityInfo.p : probabilityInfo.p
+      ? fd!==dir ? 1 - probabilityInfo.p : probabilityInfo.p
       : null;
-    const probabilityText = probabilityInfo
+    const probabilityText=probabilityInfo
       ? `${(executionProbability * 100).toFixed(1)}% (${probabilityInfo.n} casos)`
       : `sin ${CFG.rlMinN} resultados válidos del contexto`;
 
@@ -649,6 +627,46 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     return null;
   }
 
+  function flowStep(flow,t0) {
+    const {curBar}=brain.getState();
+    if(!curBar || !Number.isFinite(curBar.t) ||
+       !Number.isFinite(curBar.timeframe) || curBar.timeframe<=0 ||
+       curPrice()==null)
+      return;
+
+    const now=Date.now();
+    const elapsed=now-curBar.t;
+    const phaseNow=((elapsed%curBar.timeframe)+curBar.timeframe)%curBar.timeframe;
+    const targetPhase=flow.phase*curBar.timeframe;
+    const phaseGap=Math.abs(phaseNow-targetPhase);
+    const phaseDistance=Math.min(phaseGap,curBar.timeframe-phaseGap);
+
+    if(phaseDistance>5000 || now-flow.lastActionAt<flow.intervalMs ||
+       lastFlowAttemptBar===curBar.t)
+      return;
+
+    lastFlowAttemptBar=curBar.t;
+    sess.signals++;
+    rlLast=`FLOW usuario: ${dirWord(flow.direction)} · cada `+
+      `${Math.round(flow.intervalMs/1000)} s · segundo `+
+      `${Math.round(targetPhase/1000)} de vela`;
+    const why={
+      t:now,
+      dir:flow.direction,
+      title:`${dirWord(flow.direction)} por tu flow`,
+      result:null,
+      lines:[
+        `Replico tus últimas ${flow.entries} entradas manuales.`,
+        `Dirección habitual: ${dirWord(flow.direction)}.`,
+        `Momento aprendido: segundo ${Math.round(targetPhase/1000)} de la vela de ${Math.round(curBar.timeframe/1000)} s.`,
+        `Ritmo aprendido: una entrada cada ${Math.round(flow.intervalMs/1000)} s, aproximadamente.`,
+        "El análisis de señales y las pérdidas aprendidas no filtran este flow."
+      ]
+    };
+    const tr=doTrade(flow.direction,false,t0,"FLOW",why);
+    if(tr)brain.markUserFlowAction(now);
+  }
+
   function userTrade(dir) {
     const p = curPrice();
     const { S } = brain.getState();
@@ -675,7 +693,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       "👤",
       `Tú entraste ${dirWord(dir)}: tendencia ${TRN2[S.trend]}, zona ${POSN2[S.pos]}` +
       (pat !== "NONE" ? `, patrón ${PATN[pat]}` : "") +
-      ". Aprendo de su resultado.",
+      ". Aprendo su dirección, momento y ritmo.",
       "usr" + Date.now()
     );
   }
@@ -835,6 +853,10 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
       return show("PLEX ⏸ pausa: tocaste la pantalla");
     }
+
+    const userFlow=CFG.rl?brain.userFlowFor():null;
+    flowMode=!!userFlow;
+    if(userFlow)flowStep(userFlow,t0);
 
     if (CFG.usePatterns && fired.length) {
       const f = fired;

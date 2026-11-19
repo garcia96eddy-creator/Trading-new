@@ -60,9 +60,11 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   if (!rl.seen) rl.seen = {};
   if (!rl.usr) rl.usr = { n:0, w:0, l:0, pl:0 };
-  if (!rl.userStyle || typeof rl.userStyle!=="object" ||
-      Array.isArray(rl.userStyle))
-    rl.userStyle = {};
+  if (!rl.userFlow || typeof rl.userFlow!=="object" ||
+      Array.isArray(rl.userFlow))
+    rl.userFlow = {samples:[],lastActionAt:0};
+  if (!Array.isArray(rl.userFlow.samples))
+    rl.userFlow.samples=[];
 
   let rlDirty = false, rlSavedAt = 0;
   const pending = [];
@@ -1433,104 +1435,83 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ].concat(base);
   }
 
-  function userStyleKeys(patName) {
-    const pat=patName || S.pat || "NONE";
-    const structure=S.structure || {};
-    const sequence=structure.sequence || "R";
-    const event=structure.event || "NONE";
-    const candle=cdlNow.names
-      .filter(n=>n!=="DOJI")
-      .slice(0,2)
-      .sort()
-      .join("+") || "NONE";
+  function recordUserFlow(dir,at=Date.now()) {
+    if (!["HIGHER","LOWER"].includes(dir)) return;
 
-    return [
-      `C|${S.trend}|${S.pos}|${pat}|${sequence}|${event}|${candle}`,
-      `P|${S.trend}|${S.pos}|${pat}|${sequence}`,
-      `T|${S.trend}|${S.pos}|${pat}`,
-      `S|${S.trend}|${S.pos}|${sequence}`,
-      `B|${S.trend}|${S.pos}`,
-      `T|${S.trend}`,
-      "ALL"
-    ];
-  }
+    const timeframe=curBar && Number.isFinite(curBar.timeframe)
+      ? curBar.timeframe
+      : CFG.analysisTimeframeMs;
+    const phase=curBar && Number.isFinite(curBar.t) && timeframe>0
+      ? Math.max(0,Math.min(1,(at-curBar.t)/timeframe))
+      : null;
+    const flow=rl.userFlow;
 
-  function styleEntry(key) {
-    let e=rl.userStyle[key];
-    if (!e || typeof e!=="object" || Array.isArray(e))
-      e=rl.userStyle[key]={choices:[],outcomes:{HIGHER:[],LOWER:[]}};
-
-    if (!Array.isArray(e.choices)) e.choices=[];
-    if (!e.outcomes || typeof e.outcomes!=="object")
-      e.outcomes={HIGHER:[],LOWER:[]};
-    for (const dir of ["HIGHER","LOWER"]) {
-      if (!Array.isArray(e.outcomes[dir])) e.outcomes[dir]=[];
-    }
-
-    return e;
-  }
-
-  function appendRecent(list,value) {
-    list.push(value);
-    if (list.length>CFG.rlCap) list.shift();
-  }
-
-  function recordUserStyleChoice(keys,dir) {
-    if (!Array.isArray(keys) || !["HIGHER","LOWER"].includes(dir))
-      return;
-
-    for (const key of keys)
-      appendRecent(styleEntry(key).choices,dir);
-
+    flow.samples.push({at,dir,phase,timeframe});
+    if (flow.samples.length>CFG.rlCap)
+      flow.samples.shift();
+    flow.lastActionAt=at;
+    flow.lastActionPhase=phase;
+    flow.lastActionTimeframe=timeframe;
     rlDirty=true;
   }
 
-  function recordUserStyleOutcome(keys,dir,win) {
-    if (!Array.isArray(keys) || !["HIGHER","LOWER"].includes(dir))
-      return;
+  function userFlowFor() {
+    const flow=rl.userFlow;
+    if (!flow || !Array.isArray(flow.samples)) return null;
 
-    for (const key of keys)
-      appendRecent(styleEntry(key).outcomes[dir],!!win);
+    const samples=flow.samples.filter(s=>
+      s && Number.isFinite(s.at) &&
+      (s.dir==="HIGHER"||s.dir==="LOWER") &&
+      Number.isFinite(s.phase)
+    ).slice(-5);
+    if (samples.length<2) return null;
 
-    rlDirty=true;
+    const intervals=[];
+    for(let i=1;i<samples.length;i++){
+      const gap=samples[i].at-samples[i-1].at;
+      if(gap>0)intervals.push(gap);
+    }
+    if(!intervals.length)return null;
+
+    intervals.sort((a,b)=>a-b);
+    const mid=intervals.length>>1;
+    const intervalMs=intervals.length%2
+      ? intervals[mid]
+      : (intervals[mid-1]+intervals[mid])/2;
+    const higher=samples.filter(s=>s.dir==="HIGHER").length;
+    const lower=samples.length-higher;
+    const latest=samples[samples.length-1];
+    const timeframe=Number(flow.lastActionTimeframe)||
+      Number(latest.timeframe)||CFG.analysisTimeframeMs;
+    const basePhase=Number.isFinite(flow.lastActionPhase)
+      ? flow.lastActionPhase
+      : latest.phase;
+    const phase=(basePhase+(intervalMs%timeframe)/timeframe)%1;
+
+    return {
+      direction:higher===lower
+        ? latest.dir
+        : higher>lower ? "HIGHER":"LOWER",
+      phase,
+      intervalMs,
+      entries:samples.length,
+      lastActionAt:Number(flow.lastActionAt)||latest.at
+    };
   }
 
-  function userStyleFor(patName) {
-    const keys=userStyleKeys(patName);
+  function markUserFlowAction(at=Date.now()) {
+    if (!rl.userFlow || typeof rl.userFlow!=="object")
+      rl.userFlow={samples:[],lastActionAt:0};
 
-    for (const key of keys) {
-      const e=rl.userStyle[key];
-      if (!e || !Array.isArray(e.choices) ||
-          e.choices.length<CFG.userStyleMinN)
-        continue;
-
-      const higher=e.choices.filter(dir=>dir==="HIGHER").length;
-      const lower=e.choices.filter(dir=>dir==="LOWER").length;
-      const n=higher+lower;
-      if (!n) continue;
-
-      const direction=higher>=lower ? "HIGHER":"LOWER";
-      const share=Math.max(higher,lower)/n;
-      if (share<0.6) continue;
-
-      const outcomes=Array.isArray(e.outcomes && e.outcomes[direction])
-        ? e.outcomes[direction].slice(-CFG.rlCap)
-        : [];
-      const p=outcomes.length
-        ? outcomes.filter(Boolean).length/outcomes.length
-        : null;
-
-      return {
-        key,
-        direction,
-        n,
-        share,
-        results:outcomes.length,
-        p
-      };
-    }
-
-    return null;
+    const timeframe=curBar && Number.isFinite(curBar.timeframe)
+      ? curBar.timeframe
+      : CFG.analysisTimeframeMs;
+    rl.userFlow.lastActionPhase=curBar && Number.isFinite(curBar.t)
+      ? Math.max(0,Math.min(1,(at-curBar.t)/timeframe))
+      : null;
+    rl.userFlow.lastActionTimeframe=timeframe;
+    rl.userFlow.lastActionAt=at;
+    rlDirty=true;
   }
 
   function policy(keys,mn=CFG.rlMinN) {
@@ -1574,8 +1555,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   function recordSample(p,expMs,src,dir,keys,patName,isUser=false) {
     if (p==null) return null;
 
-    const styleKeys=isUser ? userStyleKeys(patName) : null;
-    if (styleKeys) recordUserStyleChoice(styleKeys,dir);
+    if (isUser) recordUserFlow(dir);
 
     const s={
       exp:performance.now()+expMs,
@@ -1585,7 +1565,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       src,
       pat:patName || S.pat,
       user:isUser,
-      styleKeys,
       ex:null,
       tr:null
     };
@@ -1636,8 +1615,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         }
 
         rl.usr.pl+=rF;
-        if (!tie)
-          recordUserStyleOutcome(s.styleKeys,s.dir,win);
 
         const ic=tie ? "➖" : win ? "✅" : "❌";
 
@@ -1743,7 +1720,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       pl:0,
       seen:{},
       usr:{n:0,w:0,l:0,pl:0},
-      userStyle:{}
+      userFlow:{samples:[],lastActionAt:0}
     };
 
     pending.length=0;
@@ -1799,7 +1776,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     evalPending,
     resetRL,
     saveRLIfDirty,
-    userStyleFor,
+    userFlowFor,
+    markUserFlowAction,
     ctxPat
   };
 })();

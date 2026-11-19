@@ -870,10 +870,23 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         c:AMBER,bg:"#3a2f12"
       };
 
+    const flow=brain.userFlowFor();
+    const flowSamples=rl.userFlow&&Array.isArray(rl.userFlow.samples)
+      ? rl.userFlow.samples.filter(s=>s&&Number.isFinite(s.phase)).length
+      : 0;
+    if(flow){
+      const {curBar}=brain.getState();
+      return {
+        ic:"🪞",
+        t:`Replicando tu flow · vela ${Math.round(flow.phase*(curBar&&curBar.timeframe||60000)/1000)} s · cada ${Math.round(flow.intervalMs/1000)} s`,
+        c:GREEN,bg:"#12351f"
+      };
+    }
+
     return {
       ic:"🧠",
       t:`Aprendizaje activo · ${rl.total} muestras`+
-        (rl.usr&&rl.usr.n?` · analiza tu estilo (${rl.usr.n} entradas)`:""),
+        ` · aprendiendo tu flow (${Math.min(flowSamples,2)}/2 entradas)`,
       c:GREEN,bg:"#12351f"
     };
   }
