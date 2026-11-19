@@ -60,6 +60,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   if (!rl.seen) rl.seen = {};
   if (!rl.usr) rl.usr = { n:0, w:0, l:0, pl:0 };
+  if (!rl.userStyle || typeof rl.userStyle!=="object" ||
+      Array.isArray(rl.userStyle))
+    rl.userStyle = {};
 
   let rlDirty = false, rlSavedAt = 0;
   const pending = [];
@@ -1430,6 +1433,106 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     ].concat(base);
   }
 
+  function userStyleKeys(patName) {
+    const pat=patName || S.pat || "NONE";
+    const structure=S.structure || {};
+    const sequence=structure.sequence || "R";
+    const event=structure.event || "NONE";
+    const candle=cdlNow.names
+      .filter(n=>n!=="DOJI")
+      .slice(0,2)
+      .sort()
+      .join("+") || "NONE";
+
+    return [
+      `C|${S.trend}|${S.pos}|${pat}|${sequence}|${event}|${candle}`,
+      `P|${S.trend}|${S.pos}|${pat}|${sequence}`,
+      `T|${S.trend}|${S.pos}|${pat}`,
+      `S|${S.trend}|${S.pos}|${sequence}`,
+      `B|${S.trend}|${S.pos}`,
+      `T|${S.trend}`,
+      "ALL"
+    ];
+  }
+
+  function styleEntry(key) {
+    let e=rl.userStyle[key];
+    if (!e || typeof e!=="object" || Array.isArray(e))
+      e=rl.userStyle[key]={choices:[],outcomes:{HIGHER:[],LOWER:[]}};
+
+    if (!Array.isArray(e.choices)) e.choices=[];
+    if (!e.outcomes || typeof e.outcomes!=="object")
+      e.outcomes={HIGHER:[],LOWER:[]};
+    for (const dir of ["HIGHER","LOWER"]) {
+      if (!Array.isArray(e.outcomes[dir])) e.outcomes[dir]=[];
+    }
+
+    return e;
+  }
+
+  function appendRecent(list,value) {
+    list.push(value);
+    if (list.length>CFG.rlCap) list.shift();
+  }
+
+  function recordUserStyleChoice(keys,dir) {
+    if (!Array.isArray(keys) || !["HIGHER","LOWER"].includes(dir))
+      return;
+
+    for (const key of keys)
+      appendRecent(styleEntry(key).choices,dir);
+
+    rlDirty=true;
+  }
+
+  function recordUserStyleOutcome(keys,dir,win) {
+    if (!Array.isArray(keys) || !["HIGHER","LOWER"].includes(dir))
+      return;
+
+    for (const key of keys)
+      appendRecent(styleEntry(key).outcomes[dir],!!win);
+
+    rlDirty=true;
+  }
+
+  function userStyleFor(patName) {
+    const keys=userStyleKeys(patName);
+
+    for (const key of keys) {
+      const e=rl.userStyle[key];
+      if (!e || !Array.isArray(e.choices) ||
+          e.choices.length<CFG.userStyleMinN)
+        continue;
+
+      const higher=e.choices.filter(dir=>dir==="HIGHER").length;
+      const lower=e.choices.filter(dir=>dir==="LOWER").length;
+      const n=higher+lower;
+      if (!n) continue;
+
+      const direction=higher>=lower ? "HIGHER":"LOWER";
+      const share=Math.max(higher,lower)/n;
+      if (share<0.6) continue;
+
+      const outcomes=Array.isArray(e.outcomes && e.outcomes[direction])
+        ? e.outcomes[direction].slice(-CFG.rlCap)
+        : [];
+      const p=outcomes.length
+        ? outcomes.filter(Boolean).length/outcomes.length
+        : null;
+
+      return {
+        key,
+        direction,
+        n,
+        share,
+        results:outcomes.length,
+        p
+      };
+    }
+
+    return null;
+  }
+
   function policy(keys,mn=CFG.rlMinN) {
     for (const k of keys) {
       const e=rl.Q[k];
@@ -1471,6 +1574,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   function recordSample(p,expMs,src,dir,keys,patName,isUser=false) {
     if (p==null) return null;
 
+    const styleKeys=isUser ? userStyleKeys(patName) : null;
+    if (styleKeys) recordUserStyleChoice(styleKeys,dir);
+
     const s={
       exp:performance.now()+expMs,
       p0:p,
@@ -1479,6 +1585,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       src,
       pat:patName || S.pat,
       user:isUser,
+      styleKeys,
       ex:null,
       tr:null
     };
@@ -1529,6 +1636,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         }
 
         rl.usr.pl+=rF;
+        if (!tie)
+          recordUserStyleOutcome(s.styleKeys,s.dir,win);
 
         const ic=tie ? "➖" : win ? "✅" : "❌";
 
@@ -1633,7 +1742,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       hist:[],
       pl:0,
       seen:{},
-      usr:{n:0,w:0,l:0,pl:0}
+      usr:{n:0,w:0,l:0,pl:0},
+      userStyle:{}
     };
 
     pending.length=0;
@@ -1689,6 +1799,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     evalPending,
     resetRL,
     saveRLIfDirty,
+    userStyleFor,
     ctxPat
   };
 })();

@@ -88,6 +88,19 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     "touch-action:none;user-select:none;-webkit-user-select:none;line-height:1.3;border:1px solid rgba(255,255,255,.15)",
     box
   );
+  const headExpandedStyle=
+    "display:inline-block;background:rgba(0,0,0,.7);color:#cfe;padding:4px 7px;border-radius:8px;"+
+    "touch-action:none;user-select:none;-webkit-user-select:none;line-height:1.3;border:1px solid rgba(255,255,255,.15)";
+  const headCompactStyle=
+    "display:block;width:172px;box-sizing:border-box;padding:9px 10px;border-radius:20px;"+
+    "touch-action:none;user-select:none;-webkit-user-select:none;line-height:1.15;color:#eaf6ff;"+
+    "background:linear-gradient(145deg,rgba(13,25,42,.97),rgba(8,13,24,.96));"+
+    "border:1px solid rgba(117,190,255,.44);"+
+    "box-shadow:0 8px 26px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.12)";
+  const watchStyle=document.createElement("style");
+  watchStyle.textContent=
+    "@keyframes plexUiWatchPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.58;transform:scale(.82)}}";
+  (document.head||document.documentElement).appendChild(watchStyle);
 
   const body=el(
     "div",
@@ -299,6 +312,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   };
 
   let sndBtn=null,headTxt="",settingsStatus=null;
+  let headerState=null,watchContext=()=>null;
 
   function setupButtons(actions){
     mkSec("Pruebas");
@@ -384,10 +398,14 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   window.addEventListener("resize",fitBody);
 
   const applyOpen=()=>{
+    head.style.cssText=ui.open?headExpandedStyle:headCompactStyle;
     body.style.display=ui.open?"block":"none";
     if(ui.open){
       fitBody();
+      renderExpandedHeader();
       renderFn();
+    }else{
+      renderCompactHeader();
     }
   };
 
@@ -413,8 +431,10 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     drag.moved=true;
 
-    ui.x=Math.max(0,Math.min(window.innerWidth-60,drag.bx+dx));
-    ui.y=Math.max(0,Math.min(window.innerHeight-40,drag.by+dy));
+    const maxX=Math.max(0,window.innerWidth-(ui.open?box.offsetWidth:head.offsetWidth));
+    const maxY=Math.max(0,window.innerHeight-(ui.open?box.offsetHeight:head.offsetHeight));
+    ui.x=Math.max(0,Math.min(maxX,drag.bx+dx));
+    ui.y=Math.max(0,Math.min(maxY,drag.by+dy));
 
     box.style.left=ui.x+"px";
     box.style.top=ui.y+"px";
@@ -711,7 +731,16 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   }
 
   function paintHeader(demo,o,zzHead,tradeCount,lastTradeShort,rlTagStr,lastSay){
+    headerState={demo,o,zzHead,tradeCount,lastTradeShort,rlTagStr,lastSay};
+    if(ui.open)renderExpandedHeader();
+    else renderCompactHeader();
+  }
+
+  function renderExpandedHeader(){
+    if(!headerState)return;
+
     try{
+      const {demo,o,zzHead,tradeCount,lastTradeShort,rlTagStr}=headerState;
       const P="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;white-space:nowrap;";
       const zz=/▲/.test(zzHead)?GREEN:/▼/.test(zzHead)?RED:"#9ab";
 
@@ -731,6 +760,60 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         head.innerHTML=html;
       }
     }catch(e){}
+  }
+
+  function renderCompactHeader(){
+    if(ui.open||!headerState)return;
+
+    try{
+      const d=watchContext()||{};
+      const {S}=brain.getState();
+      const price=Number.isFinite(d.curPrice)?d.curPrice.toFixed(5):"—";
+      const trend=S.trend==="U"
+        ? {icon:"▲",label:"ALCISTA",color:GREEN}
+        : S.trend==="D"
+          ? {icon:"▼",label:"BAJISTA",color:RED}
+          : {icon:"↔",label:"LATERAL",color:AMBER};
+      const stats=d.execStats||{};
+      const win=stats.win==null?"—":`${Math.round(stats.win*100)}%`;
+      const winColor=stats.win==null?GREY:
+        Number.isFinite(d.be)&&stats.win<d.be?AMBER:GREEN;
+      const opened=Array.isArray(d.openTrades)?d.openTrades:[];
+      const seconds=opened.length
+        ? Math.max(0,Math.ceil((opened[0].until-Date.now())/1000))
+        : null;
+      const status=d.isPaused
+        ? {text:"PAUSA",color:AMBER}
+        : d.curPrice==null
+          ? {text:"BUSCANDO PRECIO",color:AMBER}
+          : {text:opened.length?"OPERACIÓN ABIERTA":"EN VIVO",color:GREEN};
+      const html=
+        `<div style="display:flex;align-items:center;gap:5px">`+
+          `<span style="width:7px;height:7px;flex:none;border-radius:50%;background:${status.color};box-shadow:0 0 8px ${status.color};animation:plexUiWatchPulse 1.8s ease-in-out infinite"></span>`+
+          `<b style="font-size:10px;letter-spacing:1.2px">PLEX</b>`+
+          `<span style="margin-left:auto;padding:3px 6px;border-radius:9px;background:${headerState.demo?"#12351f":"#4a1616"};`+
+            `color:${headerState.demo?GREEN:RED};font-size:8px;font-weight:bold">${headerState.demo?"DEMO":"REAL"}</span>`+
+        `</div>`+
+        `<div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">`+
+          `<div><div style="font-size:8px;color:#8aa;letter-spacing:.7px">PRECIO</div>`+
+            `<b style="font-size:17px;letter-spacing:.2px">${price}</b></div>`+
+          `<div style="text-align:right;padding:5px 7px;border-radius:12px;background:#111b2b;border:1px solid ${trend.color}55">`+
+            `<b style="display:block;color:${trend.color};font-size:11px">${trend.icon} ${trend.label}</b>`+
+            `<span style="font-size:8px;color:#8aa">vela 1 min</span></div>`+
+        `</div>`+
+        `<div style="display:flex;align-items:center;justify-content:space-between;margin-top:7px;padding-top:6px;`+
+          `border-top:1px solid rgba(255,255,255,.09);font-size:9px">`+
+          `<span style="color:${winColor}">🎯 ${win}<span style="color:#678"> (${stats.n||0})</span></span>`+
+          `<span style="color:${status.color};font-weight:bold">${opened.length?`⏳ ${seconds}s`:status.text}</span>`+
+        `</div>`;
+
+      if(html!==headTxt){
+        headTxt=html;
+        head.innerHTML=html;
+      }
+    }catch(e){
+      console.error("[PLEX compact UI]",e);
+    }
   }
 
   function statusOf(d,rl,p){
@@ -753,7 +836,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       };
 
     return {
-      ic:"🧠",t:`Aprendizaje activo como guía · ${rl.total} muestras`,
+      ic:"🧠",
+      t:`Aprendizaje activo · ${rl.total} muestras`+
+        (rl.usr&&rl.usr.n?` · analiza tu estilo (${rl.usr.n} entradas)`:""),
       c:GREEN,bg:"#12351f"
     };
   }
@@ -768,6 +853,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     `</div>`;
 
   function initDashboard(getCtxData){
+    watchContext=getCtxData;
     renderFn=()=>{
       try{
         const d=getCtxData();
@@ -1096,6 +1182,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     setInterval(()=>{
       if(ui.open)renderFn();
+      else renderCompactHeader();
     },400);
 
     applyOpen();
