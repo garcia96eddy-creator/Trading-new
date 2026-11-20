@@ -13,7 +13,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   const brain = window.PLEX_MOD.brain;
 
   const ui = Object.assign(
-    { open:false, x:4, y:108 },
+    { open:false, x:4, y:108, narration:false },
     loadCal("iqtri_ui") || {}
   );
 
@@ -317,10 +317,114 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     bt.style.color=on?GREEN:"#fff";
   };
 
-  let sndBtn=null,headTxt="",settingsStatus=null;
+  let sndBtn=null,narrationBtn=null,headTxt="",settingsStatus=null;
   let headerState=null,watchContext=()=>null;
+  let lastNarrationAt=0;
+
+  function narrationVoice(){
+    if(!("speechSynthesis" in window))return null;
+
+    const voices=window.speechSynthesis.getVoices();
+    const spanish=voices.filter(v=>/^es([-_]|$)/i.test(v.lang));
+    const maleNames=/jorge|miguel|pablo|diego|raul|raúl|enrique|antonio|carlos|juan|manuel|male|mascul/i;
+    return spanish.find(v=>maleNames.test(v.name))||
+      spanish.find(v=>/natural|neural|enhanced|premium/i.test(v.name))||
+      spanish[0]||
+      voices.find(v=>maleNames.test(v.name))||
+      null;
+  }
+
+  function narrate(text,force=false){
+    if(!ui.narration||!("speechSynthesis" in window)||
+       typeof window.SpeechSynthesisUtterance==="undefined")
+      return;
+
+    const now=Date.now();
+    const critical=force||/ENTRADA #|GANÓ|PERDIÓ|Operación bloqueada|Entrada bloqueada/i.test(text);
+    if(!critical&&now-lastNarrationAt<1600)return;
+
+    const clean=String(text)
+      .replace(/^ENTRADA #(\d+) (SUBE|BAJA) — /i,"Entrada número $1. $2. ")
+      .replace(/^Tu operación (SUBE|BAJA): (GANÓ|PERDIÓ|empate)/i,"Tu operación $1: $2.")
+      .replace(/^Señal detectada: /i,"Señal detectada: ")
+      .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/gu," ")
+      .replace(/[→·—]/g," ")
+      .replace(/\s+/g," ").trim();
+    if(!clean)return;
+
+    const synth=window.speechSynthesis;
+    if(synth.pending&&synth.pending>2&&!critical)return;
+    if(critical)synth.cancel();
+
+    const utterance=new window.SpeechSynthesisUtterance(clean);
+    utterance.lang="es-MX";
+    utterance.rate=0.92;
+    utterance.pitch=0.84;
+    const voice=narrationVoice();
+    if(voice){
+      utterance.voice=voice;
+      utterance.lang=voice.lang||utterance.lang;
+    }
+    utterance.onerror=e=>{
+      if(e.error==="canceled"||e.error==="interrupted")return;
+      const message=`No se pudo reproducir la voz: ${e.error||"error de audio"}`;
+      if(settingsStatus)settingsStatus.textContent=message;
+      console.error("[PLEX narration]",message);
+    };
+
+    lastNarrationAt=now;
+    try{
+      synth.speak(utterance);
+    }catch(e){
+      const message=`No se pudo iniciar la narración: ${e.message}`;
+      if(settingsStatus)settingsStatus.textContent=message;
+      console.error("[PLEX narration]",e);
+    }
+  }
 
   function setupButtons(actions){
+    mkSec("Narración en vivo");
+    narrationBtn=mk("",()=>{
+      if(!("speechSynthesis" in window)){
+        actions.setLastEvent("este navegador no ofrece narración por voz");
+        return;
+      }
+
+      ui.narration=!ui.narration;
+      saveCal("iqtri_ui",ui);
+      paintToggle(narrationBtn,"🗣️ Narración",ui.narration);
+      if(ui.narration){
+        unlockAudio();
+        narrate("Narración activada. Te contaré las señales, entradas y resultados con voz en español.",true);
+        actions.setLastEvent(
+          narrationVoice()
+            ? `Narración activada · voz ${narrationVoice().name}`
+            : "Narración activada · voz disponible en el dispositivo"
+        );
+      }else{
+        window.speechSynthesis.cancel();
+        actions.setLastEvent("narración desactivada");
+      }
+    });
+    paintToggle(narrationBtn,"🗣️ Narración",ui.narration);
+    el(
+      "div",
+      `grid-column:1/-1;color:${GREY};font-size:9px;line-height:1.4`,
+      btns,
+      "Usa la voz masculina en español disponible en tu dispositivo, con un ritmo pausado. La voz depende del navegador."
+    );
+
+    mk("🎙️ Probar voz",()=>{
+      if(!("speechSynthesis" in window)){
+        actions.setLastEvent("este navegador no ofrece narración por voz");
+        return;
+      }
+      ui.narration=true;
+      saveCal("iqtri_ui",ui);
+      paintToggle(narrationBtn,"🗣️ Narración",true);
+      narrate("Hola. Estoy contigo. Te avisaré con calma cuando detecte una señal, realice una entrada o se resuelva una operación.",true);
+    });
+
     mkSec("Pruebas");
     mk("🔽 Probar baja",()=>actions.doTrade("LOWER",true));
     mk("🔼 Probar sube",()=>actions.doTrade("HIGHER",true));
@@ -1240,6 +1344,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     box,
     setupButtons,
     paintHeader,
+    narrate,
     setSettingsStatus:text=>{
       if(settingsStatus) settingsStatus.textContent=String(text);
     },

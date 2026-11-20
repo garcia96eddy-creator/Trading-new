@@ -48,6 +48,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     story.unshift({ t: now, icon, text });
     if (story.length > CFG.storyMax) story.pop();
     lastSay = icon + " " + text;
+    ui.narrate(text);
   }
 
   let lastP = null, lastPAt = 0, pxAt = 0;
