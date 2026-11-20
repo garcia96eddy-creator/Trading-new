@@ -692,6 +692,65 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       const i=s2.i-off0;
       if(i>=0)g.fillRect(i*bw+bw/2-2,y(s2.p)+3,4,3);
     }
+
+    const pattern=S.structurePattern;
+    if(pattern&&Array.isArray(pattern.points)&&Array.isArray(pattern.lines)){
+      const color=pattern.direction==="HIGHER"?GREEN:RED;
+      const timeToX=t=>{
+        let index=all.findIndex(b=>b.t===t);
+        if(index<0){
+          const timeframe=Number(curBar&&curBar.timeframe)||CFG.analysisTimeframeMs;
+          const lastIndex=all.length-1;
+          index=lastIndex+(t-all[lastIndex].t)/timeframe;
+        }
+        return (index-off0+0.5)*bw;
+      };
+
+      g.save();
+      g.strokeStyle=color;
+      g.fillStyle=color;
+      g.lineWidth=2;
+      if(pattern.points.length>1){
+        g.globalAlpha=0.45;
+        g.beginPath();
+        pattern.points.forEach((point,i)=>{
+          const x=timeToX(point.t),py=y(point.p);
+          if(i===0)g.moveTo(x,py);
+          else g.lineTo(x,py);
+        });
+        g.stroke();
+        g.globalAlpha=1;
+      }
+      g.setLineDash(pattern.status==="confirmed"?[]:[5,3]);
+      for(const line of pattern.lines){
+        const x1=timeToX(line.a.t),x2=timeToX(line.b.t);
+        if(Math.max(x1,x2)<0||Math.min(x1,x2)>W)continue;
+        g.beginPath();
+        g.moveTo(x1,y(line.a.p));
+        g.lineTo(x2,y(line.b.p));
+        g.stroke();
+      }
+
+      g.setLineDash([]);
+      for(const point of pattern.points){
+        const x=timeToX(point.t);
+        if(x<0||x>W)continue;
+        const py=y(point.p);
+        g.beginPath();
+        g.arc(x,py,3,0,Math.PI*2);
+        g.fill();
+        if(point.tag){
+          g.font="9px sans-serif";
+          g.fillText(point.tag,x+3,py-4);
+        }
+      }
+      g.font="bold 10px sans-serif";
+      const title=`${pattern.name} · ${
+        pattern.status==="confirmed"?"CONFIRMADO":pattern.progress
+      }`;
+      g.fillText(title,6,12,W-12);
+      g.restore();
+    }
   }
 
   function drawMotif(v){
