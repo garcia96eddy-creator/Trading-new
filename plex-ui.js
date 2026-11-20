@@ -176,7 +176,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
   cvMotif.height=84;
   el(
     "div",`color:${GREY};font-size:9px;margin-top:3px`,motifCard,
-    "Velas en vivo · actual (verde/rojo) · candidatos históricos (azul/violeta)"
+    "Línea celeste: forma actual · líneas azul/violeta: ejemplos similares"
   );
   const chartCard=el("div",CARD+";margin-top:6px;padding:6px",panes[0]);
   const cvBars=el("canvas","width:100%;height:72px;border-radius:6px;display:block",chartCard);
@@ -856,6 +856,49 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       g.stroke();
       g.fillRect(cx-candleWidth/2,top,candleWidth,height);
     });
+
+    history.forEach(series=>{
+      g.save();
+      g.strokeStyle=series.color;
+      g.globalAlpha=0.9;
+      g.lineWidth=1.5;
+      g.lineCap="round";
+      g.lineJoin="round";
+      g.setLineDash([3,2]);
+      g.beginPath();
+      series.candles.forEach((c,i)=>{
+        const px=x(i)+series.offset;
+        const py=y(c.c);
+        if(i===0)g.moveTo(px,py);
+        else g.lineTo(px,py);
+      });
+      g.stroke();
+      g.restore();
+    });
+
+    g.save();
+    g.strokeStyle="#e9fbff";
+    g.fillStyle=BLUE;
+    g.lineWidth=2.5;
+    g.lineCap="round";
+    g.lineJoin="round";
+    g.shadowColor=BLUE;
+    g.shadowBlur=5;
+    g.beginPath();
+    current.forEach((c,i)=>{
+      const px=x(i),py=y(c.c);
+      if(i===0)g.moveTo(px,py);
+      else g.lineTo(px,py);
+    });
+    g.stroke();
+    g.shadowBlur=0;
+    current.forEach((c,i)=>{
+      const px=x(i),py=y(c.c);
+      g.beginPath();
+      g.arc(px,py,i===current.length-1?2.8:1.8,0,Math.PI*2);
+      g.fill();
+    });
+    g.restore();
     g.lineWidth=1;
   }
 
