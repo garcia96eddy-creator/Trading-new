@@ -695,7 +695,8 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
     const pattern=S.structurePattern;
     if(pattern&&Array.isArray(pattern.points)&&Array.isArray(pattern.lines)){
-      const color=pattern.direction==="HIGHER"?GREEN:RED;
+      const color=pattern.direction==="HIGHER"?GREEN:
+        pattern.direction==="LOWER"?RED:AMBER;
       const timeToX=t=>{
         let index=all.findIndex(b=>b.t===t);
         if(index<0){

@@ -96,7 +96,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   const patState = {}, patLast = {};
   let structBreak = null;
-  let lastStructurePatternSignal="";
+  let lastStructurePatternSignal=null;
   let continuationState={
     direction:null,
     pullbackBar:0,
@@ -114,6 +114,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     "SR_SUPPORT_3","SR_RESISTANCE_3",
     "CONT_UP","CONT_DN",
     "HS_TOP","HS_BOTTOM","TRI_ASC","TRI_DESC",
+    "TRI_SYM_UP","TRI_SYM_DN","WEDGE_RISE","WEDGE_FALL",
+    "RECT_UP","RECT_DN","FLAG_UP","FLAG_DN","PENNANT_UP","PENNANT_DN",
+    "CUP_HANDLE_UP","CUP_HANDLE_DN",
     "BRK_UP","BRK_DN","DBOT","DTOP","PULL_U","PULL_D",
     "REJ_B","REJ_T","INS_UP","INS_DN","RET_UP","RET_DN",
     "LVL_B","LVL_T"
@@ -218,7 +221,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     }
 
     structBreak = null;
-    lastStructurePatternSignal="";
+    lastStructurePatternSignal=null;
     brk = null;
     continuationState={direction:null,pullbackBar:0,lastSignalBar:0};
     retestState = {support:null,resistance:null,lastBar:0};
@@ -918,7 +921,9 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         ? line.a.p+(line.b.p-line.a.p)*(t-line.a.t)/span
         : line.a.p;
     };
-    const makeCandidate=(id,name,direction,points,lines,rank,progress,confirmable=true)=>{
+    const makeCandidate=(
+      id,name,direction,points,lines,rank,progress,confirmable=true,signals=null
+    )=>{
       const span=points[points.length-1].i-points[0].i;
       if(span<3||span>30)return;
       const last=points[points.length-1];
@@ -926,19 +931,45 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         return;
 
       const breakLine=lines.find(line=>line.kind==="neckline"||line.kind==="break");
-      const closeLevel=breakLine?lineValue(breakLine,lastClosed.t):NaN;
-      const confirmed=confirmable&&Number.isFinite(closeLevel)&&
-        (direction==="LOWER"
-          ? lastClosed.c<closeLevel-0.08*atr
-          : lastClosed.c>closeLevel+0.08*atr);
+      let candidateDirection=direction;
+      let signalId=id;
+      let closeLevel=breakLine?lineValue(breakLine,lastClosed.t):NaN;
+      let confirmed=false;
+      if(direction==="EITHER"){
+        const upper=lines.find(line=>line.kind==="upperBreak");
+        const lower=lines.find(line=>line.kind==="lowerBreak");
+        const upperLevel=upper?lineValue(upper,lastClosed.t):NaN;
+        const lowerLevel=lower?lineValue(lower,lastClosed.t):NaN;
+        if(confirmable&&Number.isFinite(upperLevel)&&
+           lastClosed.c>upperLevel+0.08*atr){
+          candidateDirection="HIGHER";
+          signalId=signals.up;
+          closeLevel=upperLevel;
+          confirmed=true;
+        }else if(confirmable&&Number.isFinite(lowerLevel)&&
+                 lastClosed.c<lowerLevel-0.08*atr){
+          candidateDirection="LOWER";
+          signalId=signals.down;
+          closeLevel=lowerLevel;
+          confirmed=true;
+        }else{
+          candidateDirection="NEUTRAL";
+        }
+      }else{
+        confirmed=confirmable&&Number.isFinite(closeLevel)&&
+          (direction==="LOWER"
+            ? lastClosed.c<closeLevel-0.08*atr
+            : lastClosed.c>closeLevel+0.08*atr);
+      }
       if(!confirmable&&Number.isFinite(closeLevel)&&
          (direction==="LOWER"
            ? lastClosed.c<closeLevel-0.08*atr
            : lastClosed.c>closeLevel+0.08*atr))
         return;
-      const key=`${id}|${points.map(x=>x.t).join("|")}`;
+      const key=points.map(x=>x.t).join("|");
       candidates.push({
-        id,name,direction,key,status:confirmed?"confirmed":"forming",
+        id,name,direction:candidateDirection,key,signalId,
+        status:confirmed?"confirmed":"forming",
         progress,points,lines,rank,
         confirmation:{t:lastClosed.t,p:lastClosed.c,level:closeLevel}
       });
@@ -969,14 +1000,16 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       }
     }
 
-    const recentHighs=swH.filter(x=>x.i>=B.length-34);
+    const recentHighs=swH.filter(x=>x.i>=B.length-34)
+      .map(x=>Object.assign({t:B[x.i].t},x));
     for(let second=recentHighs.length-1;second>0;second--){
       const right=recentHighs[second];
       for(let first=second-1;first>=0;first--){
         const left=recentHighs[first];
         if(right.i-left.i<3||right.i-left.i>30||
            Math.abs(left.p-right.p)>0.55*atr)continue;
-        const troughs=swL.filter(x=>x.i>left.i&&x.i<right.i);
+        const troughs=swL.filter(x=>x.i>left.i&&x.i<right.i)
+          .map(x=>Object.assign({t:B[x.i].t},x));
         if(!troughs.length)continue;
         const valley=troughs.reduce((x,y)=>y.p<x.p?y:x);
         if(Math.min(left.p,right.p)-valley.p<0.65*atr||
@@ -992,14 +1025,16 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       }
     }
 
-    const recentLows=swL.filter(x=>x.i>=B.length-34);
+    const recentLows=swL.filter(x=>x.i>=B.length-34)
+      .map(x=>Object.assign({t:B[x.i].t},x));
     for(let second=recentLows.length-1;second>0;second--){
       const right=recentLows[second];
       for(let first=second-1;first>=0;first--){
         const left=recentLows[first];
         if(right.i-left.i<3||right.i-left.i>30||
            Math.abs(left.p-right.p)>0.55*atr)continue;
-        const peaks=swH.filter(x=>x.i>left.i&&x.i<right.i);
+        const peaks=swH.filter(x=>x.i>left.i&&x.i<right.i)
+          .map(x=>Object.assign({t:B[x.i].t},x));
         if(!peaks.length)continue;
         const peak=peaks.reduce((x,y)=>y.p>x.p?y:x);
         if(peak.p-Math.max(left.p,right.p)<0.65*atr||
@@ -1011,6 +1046,68 @@ window.PLEX_MOD = window.PLEX_MOD || {};
           [{kind:"neckline",a:{t:peak.t,p:peak.p},
             b:{t:current.t,p:peak.p}}],
           4,"2/2 suelos; esperando ruptura del pico");
+        break;
+      }
+    }
+
+    for(let second=recentHighs.length-1;second>0;second--){
+      const right=recentHighs[second];
+      const handles=recentLows.filter(x=>x.i>right.i&&x.i-right.i<=8);
+      if(!handles.length)continue;
+      const handle=handles[handles.length-1];
+      for(let first=second-1;first>=0;first--){
+        const left=recentHighs[first];
+        const cupBars=right.i-left.i;
+        if(cupBars<8||cupBars>30||
+           Math.abs(left.p-right.p)>0.55*atr)continue;
+        const bottoms=swL.filter(x=>x.i>left.i&&x.i<right.i)
+          .map(x=>Object.assign({t:B[x.i].t},x));
+        if(!bottoms.length)continue;
+        const bottom=bottoms.reduce((x,y)=>y.p<x.p?y:x);
+        const rim=Math.max(left.p,right.p);
+        const depth=rim-bottom.p;
+        if(depth<1.5*atr||handle.p<=right.p-depth*0.5||
+           handle.p>right.p+0.1*atr)continue;
+        makeCandidate("CUP_HANDLE_UP","Taza con asa","HIGHER",
+          [
+            Object.assign({tag:"R"},left),
+            Object.assign({tag:"C"},bottom),
+            Object.assign({tag:"R"},right),
+            Object.assign({tag:"A"},handle)
+          ].sort((a,b)=>a.i-b.i),
+          [{kind:"break",a:{t:left.t,p:rim},b:{t:current.t,p:rim}}],
+          7,"taza y asa formadas; esperando ruptura del rim");
+        break;
+      }
+    }
+
+    for(let second=recentLows.length-1;second>0;second--){
+      const right=recentLows[second];
+      const handles=recentHighs.filter(x=>x.i>right.i&&x.i-right.i<=8);
+      if(!handles.length)continue;
+      const handle=handles[handles.length-1];
+      for(let first=second-1;first>=0;first--){
+        const left=recentLows[first];
+        const cupBars=right.i-left.i;
+        if(cupBars<8||cupBars>30||
+           Math.abs(left.p-right.p)>0.55*atr)continue;
+        const tops=swH.filter(x=>x.i>left.i&&x.i<right.i)
+          .map(x=>Object.assign({t:B[x.i].t},x));
+        if(!tops.length)continue;
+        const top=tops.reduce((x,y)=>y.p>x.p?y:x);
+        const rim=Math.min(left.p,right.p);
+        const depth=top.p-rim;
+        if(depth<1.5*atr||handle.p>=right.p+depth*0.5||
+           handle.p<right.p-0.1*atr)continue;
+        makeCandidate("CUP_HANDLE_DN","Taza con asa invertida","LOWER",
+          [
+            Object.assign({tag:"R"},left),
+            Object.assign({tag:"C"},top),
+            Object.assign({tag:"R"},right),
+            Object.assign({tag:"A"},handle)
+          ].sort((a,b)=>a.i-b.i),
+          [{kind:"break",a:{t:left.t,p:rim},b:{t:current.t,p:rim}}],
+          7,"taza invertida y asa formadas; esperando ruptura");
         break;
       }
     }
@@ -1078,22 +1175,195 @@ window.PLEX_MOD = window.PLEX_MOD || {};
             {kind:"break",a:{t:lows[0].t,p:bottom},b:{t:lastClosed.t,p:bottomNow}}
           ],6,`${lows.length} suelos; máximos descendentes`);
       }
+
+      const highDelta=lastHigh.p-highs[0].p;
+      const lowDelta=lastLow.p-lows[0].p;
+      const startT=Math.max(highs[0].t,lows[0].t);
+      const endT=Math.max(lastHigh.t,lastLow.t);
+      const gapStart=lineValue(topLine,startT)-lineValue(bottomLine,startT);
+      const gapEnd=lineValue(topLine,endT)-lineValue(bottomLine,endT);
+
+      if(span<=30&&highDelta<=-0.35*atr&&lowDelta>=0.35*atr&&
+         gapStart>0.8*atr&&gapEnd>0&&gapEnd<0.8*gapStart){
+        const upperBreak={
+          kind:"upperBreak",a:topLine.a,b:topLine.b
+        };
+        const lowerBreak={
+          kind:"lowerBreak",a:bottomLine.a,b:bottomLine.b
+        };
+        makeCandidate("TRI_SYM","Triángulo simétrico","EITHER",
+          highs.concat(lows).sort((x,y)=>x.i-y.i),
+          [upperBreak,lowerBreak],6,
+          "máximos descendentes y mínimos ascendentes",true,
+          {up:"TRI_SYM_UP",down:"TRI_SYM_DN"});
+      }
+
+      if(highs.length>=2&&lows.length>=2&&span<=30){
+        const risingGapStart=lineValue(topLine,startT)-lineValue(bottomLine,startT);
+        const risingGapEnd=lineValue(topLine,current.t)-lineValue(bottomLine,current.t);
+        if(highDelta>=0.35*atr&&lowDelta>highDelta+0.1*atr&&
+           risingGapStart>0.8*atr&&risingGapEnd>0&&
+           risingGapEnd<0.8*risingGapStart){
+          makeCandidate("WEDGE_RISE","Cuña ascendente","LOWER",
+            highs.concat(lows).sort((x,y)=>x.i-y.i),
+            [
+              {kind:"resistance",a:topLine.a,b:topLine.b},
+              {kind:"neckline",a:bottomLine.a,b:bottomLine.b}
+            ],6,"máximos y mínimos ascendentes que convergen");
+        }
+
+        const fallingGapEnd=lineValue(topLine,current.t)-lineValue(bottomLine,current.t);
+        if(highDelta<=-0.35*atr&&highDelta<lowDelta-0.1*atr&&
+           risingGapStart>0.8*atr&&fallingGapEnd>0&&
+           fallingGapEnd<0.8*risingGapStart){
+          makeCandidate("WEDGE_FALL","Cuña descendente","HIGHER",
+            highs.concat(lows).sort((x,y)=>x.i-y.i),
+            [
+              {kind:"neckline",a:topLine.a,b:topLine.b},
+              {kind:"support",a:bottomLine.a,b:bottomLine.b}
+            ],6,"máximos y mínimos descendentes que convergen");
+        }
+      }
+
+      if(span<=30&&highs.length>=2&&lows.length>=2&&
+         Math.max(...highs.map(x=>x.p))-Math.min(...highs.map(x=>x.p))<=0.55*atr&&
+         Math.max(...lows.map(x=>x.p))-Math.min(...lows.map(x=>x.p))<=0.55*atr&&
+         top-bottom>=0.8*atr){
+        const upperBreak={
+          kind:"upperBreak",
+          a:{t:highs[0].t,p:top},
+          b:{t:lastClosed.t,p:top}
+        };
+        const lowerBreak={
+          kind:"lowerBreak",
+          a:{t:lows[0].t,p:bottom},
+          b:{t:lastClosed.t,p:bottom}
+        };
+        makeCandidate("RECT","Rectángulo","EITHER",
+          highs.concat(lows).sort((x,y)=>x.i-y.i),
+          [upperBreak,lowerBreak],6,
+          "rango horizontal; esperando ruptura",true,
+          {up:"RECT_UP",down:"RECT_DN"});
+      }
+    }
+
+    for(const windowEnd of [B.length-1,B.length-2]){
+      for(const consolidationBars of [5,4]){
+        const consolidationStart=windowEnd-consolidationBars+1;
+        const poleStart=consolidationStart-5;
+        if(poleStart<0)continue;
+        const consolidation=B.slice(consolidationStart,windowEnd+1);
+        const lastSample=consolidation.length-1;
+        const highsInConsolidation=consolidation.map((bar,i)=>({
+          i:consolidationStart+i,t:bar.t,p:bar.h,type:"H",tag:"R"
+        }));
+        const lowsInConsolidation=consolidation.map((bar,i)=>({
+          i:consolidationStart+i,t:bar.t,p:bar.l,type:"L",tag:"S"
+        }));
+        const highChange=highsInConsolidation[lastSample].p-
+          highsInConsolidation[0].p;
+        const lowChange=lowsInConsolidation[lastSample].p-
+          lowsInConsolidation[0].p;
+        const highLine={
+          kind:"resistance",
+          a:highsInConsolidation[0],
+          b:highsInConsolidation[lastSample]
+        };
+        const lowLine={
+          kind:"support",
+          a:lowsInConsolidation[0],
+          b:lowsInConsolidation[lastSample]
+        };
+        const pole=B.slice(poleStart,consolidationStart);
+        const poleHigh=pole.reduce((best,bar,i)=>
+          bar.h>best.p?{p:bar.h,i:poleStart+i,t:bar.t}:best,
+          {p:-Infinity,i:-1,t:0});
+        const poleLow=pole.reduce((best,bar,i)=>
+          bar.l<best.p?{p:bar.l,i:poleStart+i,t:bar.t}:best,
+          {p:Infinity,i:-1,t:0});
+        const minConsolidationLow=Math.min(...lowsInConsolidation.map(x=>x.p));
+        const maxConsolidationHigh=Math.max(...highsInConsolidation.map(x=>x.p));
+        const poleUp=poleHigh.p-B[poleStart].o;
+        const poleDown=B[poleStart].o-poleLow.p;
+        const bullRetracement=(poleHigh.p-minConsolidationLow)/poleUp;
+        const bearRetracement=(maxConsolidationHigh-poleLow.p)/poleDown;
+        const converging=highChange<-0.15*atr&&lowChange>0.15*atr&&
+          lineValue(highLine,lastClosed.t)>lineValue(lowLine,lastClosed.t);
+        const parallel=highChange<0&&lowChange<0&&
+          Math.abs(highChange-lowChange)<=0.35*atr;
+        const risingParallel=highChange>0&&lowChange>0&&
+          Math.abs(highChange-lowChange)<=0.35*atr;
+        const patternPoints=[
+          {i:poleStart,t:B[poleStart].t,p:B[poleStart].o,tag:"P"},
+          poleHigh,poleLow,
+          highsInConsolidation[0],highsInConsolidation[lastSample],
+          lowsInConsolidation[0],lowsInConsolidation[lastSample]
+        ].filter(point=>point.i>=0)
+          .sort((a,b)=>a.i-b.i);
+
+        if(poleUp>=1.5*atr&&poleHigh.i>=poleStart+2&&
+           bullRetracement>=0.05&&bullRetracement<=0.65){
+          const breakout={
+            kind:"break",a:highLine.a,
+            b:{t:lastClosed.t,p:lineValue(highLine,lastClosed.t)}
+          };
+          const formationLines=[highLine,lowLine,breakout];
+          if(parallel)
+            makeCandidate("FLAG_UP","Bandera alcista","HIGHER",
+              patternPoints,formationLines,5,
+              "impulso alcista y canal de pausa");
+          if(converging)
+            makeCandidate("PENNANT_UP","Banderín alcista","HIGHER",
+              patternPoints,formationLines,5,
+              "impulso alcista y consolidación convergente");
+        }
+
+        if(poleDown>=1.5*atr&&poleLow.i>=poleStart+2&&
+           bearRetracement>=0.05&&bearRetracement<=0.65){
+          const breakout={
+            kind:"break",a:lowLine.a,
+            b:{t:lastClosed.t,p:lineValue(lowLine,lastClosed.t)}
+          };
+          const formationLines=[highLine,lowLine,breakout];
+          if(risingParallel)
+            makeCandidate("FLAG_DN","Bandera bajista","LOWER",
+              patternPoints,formationLines,5,
+              "impulso bajista y canal de pausa");
+          if(converging)
+            makeCandidate("PENNANT_DN","Banderín bajista","LOWER",
+              patternPoints,formationLines,5,
+              "impulso bajista y consolidación convergente");
+        }
+      }
     }
 
     candidates.sort((a,b)=>
-      Number(b.status==="confirmed")-Number(a.status==="confirmed")||
       b.rank-a.rank||
+      Number(b.status==="confirmed")-Number(a.status==="confirmed")||
       b.points[b.points.length-1].i-a.points[a.points.length-1].i
     );
     const pattern=candidates[0]||null;
+    const confirmedPattern=candidates.find(x=>x.status==="confirmed")||null;
     let signal=null;
-    if(pattern&&pattern.status==="confirmed"&&
-       lastStructurePatternSignal!==pattern.key){
-      lastStructurePatternSignal=pattern.key;
-      signal=pattern.id;
+    if(!confirmedPattern)
+      lastStructurePatternSignal=null;
+    if(confirmedPattern){
+      const previousPoints=lastStructurePatternSignal
+        ? lastStructurePatternSignal.points : [];
+      const currentPoints=confirmedPattern.points.map(point=>point.t);
+      const shared=currentPoints.filter(t=>previousPoints.includes(t)).length;
+      const overlap=shared/Math.max(1,Math.min(
+        currentPoints.length,previousPoints.length
+      ));
+      const sameFormation=lastStructurePatternSignal&&
+        (lastStructurePatternSignal.id===confirmedPattern.signalId
+          ? overlap>=0.5
+          : overlap>=0.8);
+      if(!sameFormation)
+        signal=confirmedPattern.signalId;
     }
 
-    return {pattern,signal};
+    return {pattern,signal,confirmedPattern};
   }
 
   function analyze(p, say, horizonMs) {
@@ -1399,13 +1669,21 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         if (cur==="NONE") cur=nm;
 
         const confirmedStructureSignal=structureResult.signal===nm;
+        const cooldownElapsed=!patLast[nm]||
+          now-patLast[nm]>CFG.patCooldownMs;
         if (
-          confirmedStructureSignal ||
-          (!patState[nm]&&now-(patLast[nm]||0)>CFG.patCooldownMs)
+          cooldownElapsed&&
+          (confirmedStructureSignal||!patState[nm])
         ) {
           patLast[nm]=now;
           fired.push(nm);
           seenInc(nm);
+          if(confirmedStructureSignal)
+            lastStructurePatternSignal={
+              id:nm,
+              points:structureResult.confirmedPattern.points
+                .map(point=>point.t)
+            };
 
           if (nm==="BRK_UP" && lastH)
             brk={dir:"U",lvl:lastH.p,t:now,ext:0};
