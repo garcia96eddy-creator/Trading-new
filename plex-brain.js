@@ -87,6 +87,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     bias:0, lvl:"N", lvlT:0, mom:0,
     retests:{support:null,resistance:null},
     variablePattern:seqState,
+    structurePattern:null,
     structure:{
       trend:"R", sequence:"R", event:"NONE",
       bias:0, lastHigh:0, lastLow:0
@@ -95,6 +96,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
 
   const patState = {}, patLast = {};
   let structBreak = null;
+  let lastStructurePatternSignal="";
   let continuationState={
     direction:null,
     pullbackBar:0,
@@ -111,6 +113,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     "ST_SWEEP_H","ST_SWEEP_L","ST_RET_U","ST_RET_D",
     "SR_SUPPORT_3","SR_RESISTANCE_3",
     "CONT_UP","CONT_DN",
+    "HS_TOP","HS_BOTTOM","TRI_ASC","TRI_DESC",
     "BRK_UP","BRK_DN","DBOT","DTOP","PULL_U","PULL_D",
     "REJ_B","REJ_T","INS_UP","INS_DN","RET_UP","RET_DN",
     "LVL_B","LVL_T"
@@ -215,6 +218,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     }
 
     structBreak = null;
+    lastStructurePatternSignal="";
     brk = null;
     continuationState={direction:null,pullbackBar:0,lastSignalBar:0};
     retestState = {support:null,resistance:null,lastBar:0};
@@ -223,6 +227,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       trend:"R", sequence:"R", event:"NONE",
       bias:0, lastHigh:0, lastLow:0
     };
+    S.structurePattern=null;
     S.retests={support:null,resistance:null};
 
     prevTrend = null;
@@ -887,6 +892,210 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     return out;
   }
 
+  function detectStructurePattern(B,swH,swL,atr,current) {
+    if(B.length<8||!current||!(atr>0))return {pattern:null,signal:null};
+
+    const pivots=swH.map(x=>({i:x.i,t:B[x.i].t,p:x.p,type:"H"}))
+      .concat(swL.map(x=>({i:x.i,t:B[x.i].t,p:x.p,type:"L"})))
+      .sort((a,b)=>a.i-b.i);
+    const turns=[];
+    for(const pivot of pivots){
+      const prev=turns[turns.length-1];
+      if(prev&&prev.type===pivot.type){
+        if((pivot.type==="H"&&pivot.p>prev.p)||
+           (pivot.type==="L"&&pivot.p<prev.p))
+          turns[turns.length-1]=pivot;
+      }else{
+        turns.push(pivot);
+      }
+    }
+
+    const lastClosed=B[B.length-1];
+    const candidates=[];
+    const lineValue=(line,t)=>{
+      const span=line.b.t-line.a.t;
+      return span
+        ? line.a.p+(line.b.p-line.a.p)*(t-line.a.t)/span
+        : line.a.p;
+    };
+    const makeCandidate=(id,name,direction,points,lines,rank,progress,confirmable=true)=>{
+      const span=points[points.length-1].i-points[0].i;
+      if(span<3||span>30)return;
+      const last=points[points.length-1];
+      if(current.t-last.t>12*(Number(current.timeframe)||CFG.analysisTimeframeMs))
+        return;
+
+      const breakLine=lines.find(line=>line.kind==="neckline"||line.kind==="break");
+      const closeLevel=breakLine?lineValue(breakLine,lastClosed.t):NaN;
+      const confirmed=confirmable&&Number.isFinite(closeLevel)&&
+        (direction==="LOWER"
+          ? lastClosed.c<closeLevel-0.08*atr
+          : lastClosed.c>closeLevel+0.08*atr);
+      if(!confirmable&&Number.isFinite(closeLevel)&&
+         (direction==="LOWER"
+           ? lastClosed.c<closeLevel-0.08*atr
+           : lastClosed.c>closeLevel+0.08*atr))
+        return;
+      const key=`${id}|${points.map(x=>x.t).join("|")}`;
+      candidates.push({
+        id,name,direction,key,status:confirmed?"confirmed":"forming",
+        progress,points,lines,rank,
+        confirmation:{t:lastClosed.t,p:lastClosed.c,level:closeLevel}
+      });
+    };
+    const recent=turns.filter(x=>x.i>=B.length-34).slice(-7);
+
+    if(recent.length>=3){
+      const a=recent[recent.length-3];
+      const b=recent[recent.length-2];
+      const c=recent[recent.length-1];
+      if(a.type==="H"&&b.type==="L"&&c.type==="H"&&
+         c.p>a.p+0.25*atr&&
+         swH.filter(x=>x.i>=B.length-34&&x.i<a.i)
+           .every(x=>x.p<c.p-0.1*atr)&&current.c<c.p+0.2*atr){
+        makeCandidate("HS_TOP","Hombro-cabeza-hombro","LOWER",
+          [Object.assign({tag:"H"},a),Object.assign({tag:"V"},b),Object.assign({tag:"C"},c)],
+          [{kind:"neckline",a:{t:b.t,p:b.p},b:{t:current.t,p:b.p}}],
+          5,"cabeza detectada; falta hombro derecho",false);
+      }
+      if(a.type==="L"&&b.type==="H"&&c.type==="L"&&
+         c.p<a.p-0.25*atr&&
+         swL.filter(x=>x.i>=B.length-34&&x.i<a.i)
+           .every(x=>x.p>c.p+0.1*atr)&&current.c>c.p-0.2*atr){
+        makeCandidate("HS_BOTTOM","Hombro-cabeza-hombro invertido","HIGHER",
+          [Object.assign({tag:"H"},a),Object.assign({tag:"V"},b),Object.assign({tag:"C"},c)],
+          [{kind:"neckline",a:{t:b.t,p:b.p},b:{t:current.t,p:b.p}}],
+          5,"cabeza invertida; falta hombro derecho",false);
+      }
+    }
+
+    const recentHighs=swH.filter(x=>x.i>=B.length-34);
+    for(let second=recentHighs.length-1;second>0;second--){
+      const right=recentHighs[second];
+      for(let first=second-1;first>=0;first--){
+        const left=recentHighs[first];
+        if(right.i-left.i<3||right.i-left.i>30||
+           Math.abs(left.p-right.p)>0.55*atr)continue;
+        const troughs=swL.filter(x=>x.i>left.i&&x.i<right.i);
+        if(!troughs.length)continue;
+        const valley=troughs.reduce((x,y)=>y.p<x.p?y:x);
+        if(Math.min(left.p,right.p)-valley.p<0.65*atr||
+           current.c>Math.max(left.p,right.p)+0.3*atr)continue;
+        makeCandidate("DTOP","Doble techo","LOWER",
+          [Object.assign({tag:"1"},left),
+            Object.assign({tag:"valle"},valley),
+            Object.assign({tag:"2"},right)],
+          [{kind:"neckline",a:{t:valley.t,p:valley.p},
+            b:{t:current.t,p:valley.p}}],
+          4,"2/2 techos; esperando ruptura del valle");
+        break;
+      }
+    }
+
+    const recentLows=swL.filter(x=>x.i>=B.length-34);
+    for(let second=recentLows.length-1;second>0;second--){
+      const right=recentLows[second];
+      for(let first=second-1;first>=0;first--){
+        const left=recentLows[first];
+        if(right.i-left.i<3||right.i-left.i>30||
+           Math.abs(left.p-right.p)>0.55*atr)continue;
+        const peaks=swH.filter(x=>x.i>left.i&&x.i<right.i);
+        if(!peaks.length)continue;
+        const peak=peaks.reduce((x,y)=>y.p>x.p?y:x);
+        if(peak.p-Math.max(left.p,right.p)<0.65*atr||
+           current.c<Math.min(left.p,right.p)-0.3*atr)continue;
+        makeCandidate("DBOT","Doble suelo","HIGHER",
+          [Object.assign({tag:"1"},left),
+            Object.assign({tag:"pico"},peak),
+            Object.assign({tag:"2"},right)],
+          [{kind:"neckline",a:{t:peak.t,p:peak.p},
+            b:{t:current.t,p:peak.p}}],
+          4,"2/2 suelos; esperando ruptura del pico");
+        break;
+      }
+    }
+
+    if(recent.length>=5){
+      const q=recent.slice(-5);
+      const [a,b,c,d,e]=q;
+      if(q.every((x,i)=>x.type===(i%2===0?"H":"L"))&&
+         c.p>a.p+0.25*atr&&c.p>e.p+0.25*atr&&
+         Math.abs(a.p-e.p)<=0.8*atr){
+        makeCandidate("HS_TOP","Hombro-cabeza-hombro","LOWER",
+          [Object.assign({tag:"H"},a),Object.assign({tag:"V"},b),
+            Object.assign({tag:"C"},c),Object.assign({tag:"V"},d),
+            Object.assign({tag:"H"},e)],
+          [{kind:"neckline",a:{t:b.t,p:b.p},b:{t:d.t,p:d.p}}],
+          7,"hombros y cabeza completos; esperando ruptura del cuello");
+      }
+      if(q.every((x,i)=>x.type===(i%2===0?"L":"H"))&&
+         c.p<a.p-0.25*atr&&c.p<e.p-0.25*atr&&
+         Math.abs(a.p-e.p)<=0.8*atr){
+        makeCandidate("HS_BOTTOM","Hombro-cabeza-hombro invertido","HIGHER",
+          [Object.assign({tag:"H"},a),Object.assign({tag:"V"},b),
+            Object.assign({tag:"C"},c),Object.assign({tag:"V"},d),
+            Object.assign({tag:"H"},e)],
+          [{kind:"neckline",a:{t:b.t,p:b.p},b:{t:d.t,p:d.p}}],
+          7,"hombros y cabeza completos; esperando ruptura del cuello");
+      }
+    }
+
+    const highs=swH.filter(x=>x.i>=B.length-34).slice(-3)
+      .map(x=>({i:x.i,t:B[x.i].t,p:x.p,type:"H",tag:"R"}));
+    const lows=swL.filter(x=>x.i>=B.length-34).slice(-3)
+      .map(x=>({i:x.i,t:B[x.i].t,p:x.p,type:"L",tag:"S"}));
+    if(highs.length>=2&&lows.length>=2){
+      const span=Math.max(highs[highs.length-1].i,lows[lows.length-1].i)-
+        Math.min(highs[0].i,lows[0].i);
+      const top=Math.max(...highs.map(x=>x.p));
+      const bottom=Math.min(...lows.map(x=>x.p));
+      const lastHigh=highs[highs.length-1];
+      const lastLow=lows[lows.length-1];
+      const topLine={kind:"resistance",a:highs[0],b:lastHigh};
+      const bottomLine={kind:"support",a:lows[0],b:lastLow};
+      const topNow=lineValue(topLine,lastClosed.t);
+      const bottomNow=lineValue(bottomLine,lastClosed.t);
+
+      if(span<=30&&Math.max(...highs.map(x=>x.p))-Math.min(...highs.map(x=>x.p))<=0.55*atr&&
+         lastLow.p-lows[0].p>=0.45*atr&&
+         Math.max(...lows.map(x=>x.p))<Math.min(...highs.map(x=>x.p))){
+        makeCandidate("TRI_ASC","Triángulo ascendente","HIGHER",
+          highs.concat(lows).sort((x,y)=>x.i-y.i),
+          [
+            {kind:"resistance",a:highs[0],b:lastHigh},
+            {kind:"support",a:lows[0],b:lastLow},
+            {kind:"break",a:{t:highs[0].t,p:top},b:{t:lastClosed.t,p:topNow}}
+          ],6,`${highs.length} techos; mínimos ascendentes`);
+      }
+      if(span<=30&&Math.max(...lows.map(x=>x.p))-Math.min(...lows.map(x=>x.p))<=0.55*atr&&
+         highs[0].p-lastHigh.p>=0.45*atr&&
+         Math.min(...highs.map(x=>x.p))>Math.max(...lows.map(x=>x.p))){
+        makeCandidate("TRI_DESC","Triángulo descendente","LOWER",
+          highs.concat(lows).sort((x,y)=>x.i-y.i),
+          [
+            {kind:"support",a:lows[0],b:lastLow},
+            {kind:"resistance",a:highs[0],b:lastHigh},
+            {kind:"break",a:{t:lows[0].t,p:bottom},b:{t:lastClosed.t,p:bottomNow}}
+          ],6,`${lows.length} suelos; máximos descendentes`);
+      }
+    }
+
+    candidates.sort((a,b)=>
+      Number(b.status==="confirmed")-Number(a.status==="confirmed")||
+      b.rank-a.rank||
+      b.points[b.points.length-1].i-a.points[a.points.length-1].i
+    );
+    const pattern=candidates[0]||null;
+    let signal=null;
+    if(pattern&&pattern.status==="confirmed"&&
+       lastStructurePatternSignal!==pattern.key){
+      lastStructurePatternSignal=pattern.key;
+      signal=pattern.id;
+    }
+
+    return {pattern,signal};
+  }
+
   function analyze(p, say, horizonMs) {
     const B = bars, n = B.length;
     const sequenceSignal = sequenceStep(B,curBar,p,horizonMs,say);
@@ -897,6 +1106,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         swH:[], swL:[], bias:0, lvl:"N", lvlT:0, mom:0,
         retests:retestState,
         variablePattern:seqState,
+        structurePattern:null,
         structure:{
           trend:"R", sequence:"R", event:"NONE",
           bias:0, lastHigh:0, lastLow:0
@@ -1016,10 +1226,15 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       if (now-brk.t>90000) brk=null;
     }
 
+    const retests=updateRetests(last,swH,swL,p,atr);
+    const structureResult=detectStructurePattern(B,swH,swL,atr,cb);
+    const structurePattern=structureResult.pattern;
+
     const act={};
     if (continuationSignal)
       act[continuationSignal]=1;
-    const retests=updateRetests(last,swH,swL,p,atr);
+    if(structureResult.signal)
+      act[structureResult.signal]=1;
 
     // Estructura HH/HL o LH/LL.
     const hPrev=swH.length>=2 ? swH[swH.length-2].p : 0;
@@ -1102,31 +1317,6 @@ window.PLEX_MOD = window.PLEX_MOD || {};
     if (structBreak && now-structBreak.t>90000)
       structBreak=null;
 
-    // Patrones estructurales originales.
-    if (swH.length>=2) {
-      const a=swH[swH.length-1], b=swH[swH.length-2];
-
-      if (
-        a.i-b.i>=2 &&
-        Math.abs(a.p-b.p)<0.35*atr &&
-        p<a.p-0.5*atr &&
-        p>a.p-2*atr
-      )
-        act.DTOP=1;
-    }
-
-    if (swL.length>=2) {
-      const a=swL[swL.length-1], b=swL[swL.length-2];
-
-      if (
-        a.i-b.i>=2 &&
-        Math.abs(a.p-b.p)<0.35*atr &&
-        p>a.p+0.5*atr &&
-        p<a.p+2*atr
-      )
-        act.DBOT=1;
-    }
-
     if (
       trend==="U" &&
       last.c<last.o &&
@@ -1208,9 +1398,10 @@ window.PLEX_MOD = window.PLEX_MOD || {};
       if (act[nm]) {
         if (cur==="NONE") cur=nm;
 
+        const confirmedStructureSignal=structureResult.signal===nm;
         if (
-          !patState[nm] &&
-          now-(patLast[nm]||0)>CFG.patCooldownMs
+          confirmedStructureSignal ||
+          (!patState[nm]&&now-(patLast[nm]||0)>CFG.patCooldownMs)
         ) {
           patLast[nm]=now;
           fired.push(nm);
@@ -1348,6 +1539,7 @@ window.PLEX_MOD = window.PLEX_MOD || {};
         resistance:retests.resistance
       },
       variablePattern:seqState,
+      structurePattern,
       structure:{
         trend:structTrend,
         sequence:seqUp ? "HH/HL" : seqDown ? "LH/LL" : "R",
